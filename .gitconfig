@@ -41,7 +41,7 @@
 [credential]
 	helper = osxkeychain
 [gpg]
-	program = gpg2
+	program = gpg
 [filter "lfs"]
 	process = git-lfs filter-process
 	required = true
