@@ -50,3 +50,5 @@ alias vi=vim
 alias config='/usr/bin/git --git-dir=/Users/reset/.cfg/ --work-tree=/Users/reset'
 eval "$(direnv hook zsh)"
 
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
