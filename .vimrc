@@ -18,6 +18,9 @@ Plug 'ntpeters/vim-better-whitespace'
 Plug 'Chiel92/vim-autoformat'
 Plug 'mxw/vim-jsx'
 Plug 'octol/vim-cpp-enhanced-highlight'
+Plug 'tpope/vim-fireplace'
+Plug 'venantius/vim-cljfmt'
+Plug 'tpope/vim-surround'
 call plug#end()
 set hidden
 set laststatus=2
