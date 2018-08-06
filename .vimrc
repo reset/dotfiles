@@ -21,6 +21,9 @@ Plug 'octol/vim-cpp-enhanced-highlight'
 Plug 'tpope/vim-fireplace'
 Plug 'venantius/vim-cljfmt'
 Plug 'tpope/vim-surround'
+Plug 'OmniSharp/omnisharp-vim'
+Plug 'editorconfig/editorconfig-vim'
+Plug 'humorless/vim-kibit'
 call plug#end()
 set hidden
 set laststatus=2
@@ -34,6 +37,7 @@ let g:racer_cmd="$HOME/.cargo/bin/racer"
 let g:racer_experimental_completer=1
 let g:ycm_rust_src_path="$HOME/.rustup/toolchains/stable-x86_64-apple-darwin/lib/rustlib/src/rust/src"
 let g:rustfmt_autosave=1
+let g:indentLine_enabled=1
 let g:indentLine_char='¦'
 let g:better_whitespace_eabled=1
 let g:strip_whitespace_on_save=1
@@ -53,5 +57,36 @@ map <leader>t :Files<CR>
 map <leader>b :Buffers<CR>
 map <leader>j :BTags<CR>
 map <leader>J :Tags<CR>
+map <leader>r :RunTests<CR>
 au BufWrite * :Autoformat
+
+augroup omnisharp_commands
+    autocmd!
+
+    " Automatic syntax check on events (TextChanged requires Vim 7.4)
+    autocmd BufEnter,TextChanged,InsertLeave *.cs SyntasticCheck
+
+    " Show type information automatically when the cursor stops moving
+    autocmd CursorHold *.cs call OmniSharp#TypeLookupWithoutDocumentation()
+
+    " The following commands are contextual, based on the cursor position.
+    autocmd FileType cs nnoremap <buffer> gd :OmniSharpGotoDefinition<CR>
+    autocmd FileType cs nnoremap <buffer> <Leader>fi :OmniSharpFindImplementations<CR>
+    autocmd FileType cs nnoremap <buffer> <Leader>fs :OmniSharpFindSymbol<CR>
+    autocmd FileType cs nnoremap <buffer> <Leader>fu :OmniSharpFindUsages<CR>
+
+    " Finds members in the current buffer
+    autocmd FileType cs nnoremap <buffer> <Leader>fm :OmniSharpFindMembers<CR>
+
+    autocmd FileType cs nnoremap <buffer> <Leader>fx :OmniSharpFixUsings<CR>
+    autocmd FileType cs nnoremap <buffer> <Leader>tt :OmniSharpTypeLookup<CR>
+    autocmd FileType cs nnoremap <buffer> <Leader>dc :OmniSharpDocumentation<CR>
+    autocmd FileType cs nnoremap <buffer> <C-\> :OmniSharpSignatureHelp<CR>
+    autocmd FileType cs inoremap <buffer> <C-\> <C-o>:OmniSharpSignatureHelp<CR>
+
+
+    " Navigate up and down by method/property/field
+    autocmd FileType cs nnoremap <buffer> <C-k> :OmniSharpNavigateUp<CR>
+    autocmd FileType cs nnoremap <buffer> <C-j> :OmniSharpNavigateDown<CR>
+augroup END
 
