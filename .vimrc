@@ -24,6 +24,8 @@ Plug 'tpope/vim-surround'
 Plug 'OmniSharp/omnisharp-vim'
 Plug 'editorconfig/editorconfig-vim'
 Plug 'humorless/vim-kibit'
+Plug 'venantius/vim-eastwood'
+Plug 'tpope/vim-salve'
 call plug#end()
 set hidden
 set laststatus=2
@@ -33,6 +35,10 @@ set hlsearch
 set colorcolumn=100
 set noshowmode
 set rtp+=/usr/local/opt/fzf
+" Syntastic Status Line Settings
+set statusline+=%#warningmsg#
+set statusline+=%{SyntasticStatuslineFlag()}
+set statusline+=%*
 let g:racer_cmd="$HOME/.cargo/bin/racer"
 let g:racer_experimental_completer=1
 let g:ycm_rust_src_path="$HOME/.rustup/toolchains/stable-x86_64-apple-darwin/lib/rustlib/src/rust/src"
@@ -41,9 +47,14 @@ let g:indentLine_enabled=1
 let g:indentLine_char='¦'
 let g:better_whitespace_eabled=1
 let g:strip_whitespace_on_save=1
-let g:autoformat_autoindent = 0
-let g:autoformat_retab = 0
-let g:autoformat_remove_trailing_spaces = 0
+let g:autoformat_autoindent=0
+let g:autoformat_retab=0
+let g:autoformat_remove_trailing_spaces=0
+let g:syntastic_always_populate_loc_list=1
+let g:syntastic_auto_loc_list=1
+let g:syntastic_check_on_open=1
+let g:syntastic_check_on_wq=0
+let g:syntastic_clojure_checkers = ['eastwood']
 let base16colorspace=256
 let mapleader=","
 let maplocalleader=","
@@ -52,12 +63,14 @@ autocmd FileType javascript set tabstop=2|set shiftwidth=2|set expandtab
 colorscheme base16-default-dark
 nnoremap <silent> <C-l> :nohlsearch<CR><C-l>
 map <F3> :YcmCompleter GoTo<CR>
-map <C-p> :Files<CR>
+map <C-p> :GFiles<CR>
 map <leader>t :Files<CR>
 map <leader>b :Buffers<CR>
 map <leader>j :BTags<CR>
 map <leader>J :Tags<CR>
 map <leader>r :RunTests<CR>
+map <leader>s :Kibit<CR>
+map <leader>c :Require<CR>
 au BufWrite * :Autoformat
 
 augroup omnisharp_commands
