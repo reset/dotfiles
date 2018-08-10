@@ -63,8 +63,8 @@ autocmd FileType javascript set tabstop=2|set shiftwidth=2|set expandtab
 colorscheme base16-default-dark
 nnoremap <silent> <C-l> :nohlsearch<CR><C-l>
 map <F3> :YcmCompleter GoTo<CR>
-map <C-p> :GFiles<CR>
-map <leader>t :Files<CR>
+map <C-p> :Files<CR>
+map <leader>t :GFiles<CR>
 map <leader>b :Buffers<CR>
 map <leader>j :BTags<CR>
 map <leader>J :Tags<CR>
