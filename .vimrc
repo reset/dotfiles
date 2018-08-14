@@ -60,6 +60,7 @@ let mapleader=","
 let maplocalleader=","
 let NERDSpaceDelims=1
 autocmd FileType javascript set tabstop=2|set shiftwidth=2|set expandtab
+autocmd FileType cs set tabstop=4|set shiftwidth=4|set expandtab
 colorscheme base16-default-dark
 nnoremap <silent> <C-l> :nohlsearch<CR><C-l>
 map <F3> :YcmCompleter GoTo<CR>
