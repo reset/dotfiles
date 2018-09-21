@@ -1,7 +1,10 @@
 {:user
- {:dependencies [[cljfmt "0.6.0"]]
-  :plugins [[lein-ancient "0.6.15"]
-            [cider/cider-nrepl "0.18.0"]
+ {:dependencies [[alembic "0.3.2"]
+                 [cljfmt "0.6.1"]
+                 [org.clojure/tools.nrepl "0.2.13"]]
+  :plugins [[cider/cider-nrepl "0.18.0"]
+            [duct/lein-duct "0.11.0-alpha3"]
             [jonase/kibit "0.1.6" :exclusions [org.clojure/clojure]]
-            [jonase/eastwood "0.2.9" :exclusions [org.clojure/clojure]]]
-}}
+            [jonase/eastwood "0.2.9" :exclusions [org.clojure/clojure]]
+            [lein-ancient "0.6.15"]
+            [lein-clr "0.2.2"]]}}
