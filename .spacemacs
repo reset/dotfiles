@@ -31,7 +31,8 @@ values."
    ;; List of configuration layers to load.
    dotspacemacs-configuration-layers
    '(ruby
-     rust
+     (rust :variables
+           rust-format-on-save t)
      yaml
      javascript
      html
@@ -64,8 +65,7 @@ values."
      (python :variables
              python-enable-yapf-format-on-save t)
      docker
-     (terraform :variables
-                terraform-format-on-save-mode t)
+     terraform
      )
    ;; List of additional packages that will be installed without being
    ;; wrapped in a layer. If you need some configuration for these
@@ -336,6 +336,11 @@ you should place your code here."
   (setq multi-term-program "/usr/local/bin/zsh")
   (add-to-list 'default-frame-alist '(ns-transparent-titlebar .t))
   (add-to-list 'default-frame-alist '(ns-appearance . dark))
+  (add-hook 'terraform-mode-hook
+            (lambda ()
+              (set-fill-column 100)))
+  (add-hook 'terraform-mode-hook #'terraform-format-on-save-mode)
+  (add-hook 'terraform-mode-hook 'ruler-mode)
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
