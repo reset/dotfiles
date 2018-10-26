@@ -14,3 +14,4 @@ fi
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="/usr/local/opt/gpg-agent/bin:$PATH"
 
+if [ -e /Users/reset/.nix-profile/etc/profile.d/nix.sh ]; then . /Users/reset/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
