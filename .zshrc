@@ -11,13 +11,12 @@ PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -
 if [ "$TMUX" = "" ]; then tmux; fi
 
 export EDITOR=vim
-export GOHOME=$HOME/go
+export GOPATH=$HOME/go
 export DYLD_LIBRARY_PATH=/Library/Developer/CommandLineTools/usr/lib:/Users/reset/.rustup/toolchains/nightly-x86_64-apple-darwin/lib
 export PATH=$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH
 export RUST_SRC_PATH="$(rustc --print sysroot)/lib/rustlib/src/rust/src"
 export GPG_TTY=$(TTY)
 
-alias e=vim
 alias vi=vim
 alias config='/usr/bin/git --git-dir=/Users/reset/.cfg/ --work-tree=/Users/reset'
 
