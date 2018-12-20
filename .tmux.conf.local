@@ -1,3 +1,5 @@
+set-window-option -g mode-keys vi
+
 bind-key -T copy-mode-vi v send -X begin-selection
 bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "pbcopy"
 bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
@@ -9,4 +11,3 @@ set -g @plugin 'tmux-plugins/tpm'
 set -g @plugin 'tmux-plugins/tmux-sensible'
 set -g @plugin 'jimeh/tmux-themepack'
 run '~/.tmux/plugins/tpm/tpm'
-
