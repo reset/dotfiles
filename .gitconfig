@@ -3,8 +3,8 @@
   ci = commit -s
   br = branch
   co = checkout
-  df = diff
-  dc = diff --cached
+	df = diff
+	dc = difftool
   lg = log -p
   lol = log --graph --decorate --pretty=oneline --abbrev-commit
   lola = log --graph --decorate --pretty=oneline --abbrev-commit --all
@@ -12,16 +12,21 @@
 
   # Show files ignored by git:
   ign = ls-files -o -i --exclude-standard
+	dc = diff
+	dt = difftool
+	dc = diff
+	dc = diff --cached
 [difftool]
 	prompt = false
 [mergetool]
 	prompt = false
 [user]
 	name = Jamie Winsor
-	email = jamie@vialstudios.com
-	signingkey = 5334E988
+	email = jamie@onemoregame.com
+	signingkey = A3D661E75334E988
 [color]
 	ui = true
+	status = always
 [push]
 	default = simple
 [core]
@@ -38,3 +43,12 @@
 	required = true
 	clean = git-lfs clean -- %f
 	smudge = git-lfs smudge -- %f
+[mergetool "Kaleidoscope"]
+	cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
+	trustexitcode = true
+[merge]
+	tool = Kaleidoscope
+[difftool "Kaleidoscope"]
+	cmd = ksdiff --partial-changeset --relative-path \"$MERGED\" -- \"$LOCAL\" \"$REMOTE\"
+[diff]
+	tool = Kaleidoscope
