@@ -26,3 +26,4 @@ eval $(/usr/libexec/path_helper -s)
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 [ -f ~/.secrets ] && source ~/.secrets
 
+eval "$(direnv hook zsh)"
