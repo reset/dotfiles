@@ -1,5 +1,13 @@
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+fi
+
+DEFAULT_USER="reset"
 ZSH=$HOME/.oh-my-zsh
-ZSH_THEME="muse"
+ZSH_THEME="powerlevel10k/powerlevel10k"
 plugins=(git tmux)
 
 source $ZSH/oh-my-zsh.sh
@@ -18,7 +26,7 @@ export EDITOR=vim
 export GOPATH=$HOME/go
 export DYLD_LIBRARY_PATH=/Library/Developer/CommandLineTools/usr/lib:/Users/reset/.rustup/toolchains/nightly-x86_64-apple-darwin/lib
 export PATH=$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH
-export GPG_TTY=$(TTY)
+export GPG_TTY=$(tty)
 export VAGRANT_DEFAULT_PROVIDER=vmware_desktop
 
 alias vi=vim
@@ -30,3 +38,7 @@ eval $(/usr/libexec/path_helper -s)
 [ -f ~/.secrets ] && source ~/.secrets
 
 eval "$(direnv hook zsh)"
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
