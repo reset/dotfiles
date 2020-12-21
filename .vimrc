@@ -14,7 +14,6 @@ Plug 'uarun/vim-protobuf'
 Plug 'PProvost/vim-ps1'
 Plug 'ntpeters/vim-better-whitespace'
 Plug 'Chiel92/vim-autoformat'
-Plug 'mxw/vim-jsx'
 Plug 'editorconfig/editorconfig-vim'
 call plug#end()
 set hidden
@@ -24,11 +23,7 @@ set number
 set hlsearch
 set colorcolumn=100
 set noshowmode
-set rtp+=/usr/local/opt/fzf
-" Syntastic Status Line Settings
-set statusline+=%#warningmsg#
-set statusline+=%{SyntasticStatuslineFlag()}
-set statusline+=%*
+set rtp+=/usr/local/bin/fzf
 let g:indentLine_enabled=1
 let g:indentLine_char='¦'
 let g:better_whitespace_eabled=1
