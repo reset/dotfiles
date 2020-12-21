@@ -54,3 +54,5 @@
 	process = git-lfs filter-process
 [submodule]
 	recurse = true
+[pull]
+	rebase = true
