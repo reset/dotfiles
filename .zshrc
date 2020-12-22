@@ -22,9 +22,9 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
+export AWS_DEFAULT_REGION="us-west-2"
 export EDITOR=vim
 export GOPATH=$HOME/go
-export DYLD_LIBRARY_PATH=/Library/Developer/CommandLineTools/usr/lib:/Users/reset/.rustup/toolchains/nightly-x86_64-apple-darwin/lib
 export PATH=$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH
 export GPG_TTY=$(tty)
 export VAGRANT_DEFAULT_PROVIDER=vmware_desktop

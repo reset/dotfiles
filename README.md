@@ -6,12 +6,15 @@
 * /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 * brew analytics off
   * https://docs.brew.sh/Analytics
+* brew install coreutils
 * brew install zsh
 * brew install tmux
 * brew install git
 * brew install git-lfs
 * brew install gpg
 * brew install fzf
+* brew install buildkite/buildkite/buildkite-agent
+* brew install envconsul
 * brew tap homebrew/cask-fonts
 * brew install --cask font-fira-code
 * brew install --cask alacritty
@@ -24,6 +27,8 @@
 * echo "eval \"\$(direnv hook zsh)\"" >>"$HOME/.zshrc"
 * echo "eval \"\$(direnv hook bash)\"" >>"$HOME/.bashrc"
 * git lfs install
+* /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub -- --headless install --version 2019.4.4f1 --changeset 1f1dac67805b -m ios -m mac-il2cpp
+  * This motherfucker is documented in release notes only: https://unity3d.com/de/hub/whats-new
 
 ## Additional Steps
 
@@ -66,4 +71,3 @@ https://www.anand-iyer.com/blog/2018/a-simpler-way-to-manage-your-dotfiles.html
 ## Post Setup
 
 * vim - `:PlugInstall`
-
