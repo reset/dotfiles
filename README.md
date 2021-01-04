@@ -2,6 +2,12 @@
 
 ## Setup Order
 
+* jamie todo: unzip XCode & install
+  * curl from bucket
+  * xip -x Xcode_12.3.xip
+  * mv Xcode.app /Applications/Xcode.app
+  * sudo xcodebuild -license accept
+  * xcrun --show-sdk-platform-path
 * `defaults write -g com.apple.swipescrolldirection -bool FALSE`
 * /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 * brew analytics off
@@ -27,8 +33,13 @@
 * echo "eval \"\$(direnv hook zsh)\"" >>"$HOME/.zshrc"
 * echo "eval \"\$(direnv hook bash)\"" >>"$HOME/.bashrc"
 * git lfs install
-* /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub -- --headless install --version 2019.4.4f1 --changeset 1f1dac67805b -m ios -m mac-il2cpp
+* /Applications/Unity\ Hub.app/Contents/MacOS/Unity\ Hub -- --headless install --version 2019.4.17f1 --changeset 1667c8606c536 -m ios -m mac-il2cpp --childModules
   * This motherfucker is documented in release notes only: https://unity3d.com/de/hub/whats-new
+* Write licensing config to /Library/Application Support/Unity/config/services-config.json
+  ```json
+  {"enableEntitlementLicensing":true,"licensingServiceBaseUrl":"http://10.0.50.124:80","enableFloatingApi":true,"clientConnectTimeoutSec":5,"clientHandshakeTimeoutSec":10}
+  ```
+* /Applications/Unity/Hub/Editor/2019.4.17f1/Unity.app/Contents/MacOS/Unity -quit -batchmode -nographics -logFile -projectPath ~/code/tap/tap -executeMethod "OMG.Tap.Editor.BuildScript.BuildMacOSPlayer" --version=2
 
 ## Additional Steps
 
@@ -44,8 +55,10 @@
 * brew install --cask discord
 * brew install --cask keybase
 * brew install --cask dropbox
+* brew install --cask notable
 * brew install --cask zoom
 * mas install 1451685025 (WireGuard)
+* mas install 1295203466 (Windows RDP)
 
 ## Additional Personal
 
