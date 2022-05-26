@@ -25,7 +25,7 @@ fi
 export AWS_DEFAULT_REGION="us-west-2"
 export EDITOR=vim
 export GOPATH=$HOME/go
-export PATH=$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$PATH
+export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
 export GPG_TTY=$(tty)
 export VAGRANT_DEFAULT_PROVIDER=vmware_desktop
 

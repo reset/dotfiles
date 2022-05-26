@@ -37,7 +37,7 @@
   * This motherfucker is documented in release notes only: https://unity3d.com/de/hub/whats-new
 * Write licensing config to /Library/Application Support/Unity/config/services-config.json
   ```json
-  {"enableEntitlementLicensing":true,"licensingServiceBaseUrl":"http://10.0.50.124:80","enableFloatingApi":true,"clientConnectTimeoutSec":5,"clientHandshakeTimeoutSec":10}
+  {"enableEntitlementLicensing":true,"licensingServiceBaseUrl":"http://10.0.0.149:8080","enableFloatingApi":true,"clientConnectTimeoutSec":5,"clientHandshakeTimeoutSec":10}
   ```
 * /Applications/Unity/Hub/Editor/2019.4.17f1/Unity.app/Contents/MacOS/Unity -quit -batchmode -nographics -logFile -projectPath ~/code/tap/tap -executeMethod "OMG.Tap.Editor.BuildScript.BuildMacOSPlayer" --version=2
 
@@ -48,9 +48,11 @@
 ## Personal
 
 * brew install mas
+* brew install telnet
 * brew install wireguard-tools
 * brew install reattach-to-user-namespace
 * brew install --cask 1password
+* brew install --cask alfred
 * brew install --cask slack
 * brew install --cask discord
 * brew install --cask keybase
