@@ -25,5 +25,3 @@ export OMG_DD_HOSTNAME=jamie-laptop
 export OMG_TAP_SRC_PATH=/mnt/c/Users/JamieWinsor/code/tap
 
 if [ -e /Users/reset/.nix-profile/etc/profile.d/nix.sh ]; then . /Users/reset/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
-
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
