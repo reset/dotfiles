@@ -34,8 +34,6 @@
 	excludesfile = /Users/reset/.gitignore-global
 [commit]
 	gpgsign = true
-[credential]
-	helper = osxkeychain
 [gpg]
 	program = gpg
 [mergetool "Kaleidoscope"]
