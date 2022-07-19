@@ -13,16 +13,9 @@
 * brew analytics off
   * https://docs.brew.sh/Analytics
 * brew install coreutils
-* brew install zsh
-* brew install tmux
-* brew install git
-* brew install git-lfs
-* brew install gpg
-* brew install fzf
 * brew install buildkite/buildkite/buildkite-agent
 * brew install envconsul
 * brew tap homebrew/cask-fonts
-* brew install --cask font-fira-code
 * brew install --cask alacritty
 * brew install --cask visual-studio-code
 * brew install --cask unity-hub
@@ -45,11 +38,33 @@
 
 * Write SSH key to ~/.ssh
 
-## Personal
+## Windows Setup
+
+* https://github.com/tonsky/FiraCode/wiki/Installing
+
+## Packages
+
+* brew install zsh
+* brew install tmux
+* brew install git
+* brew install git-lfs
+* brew install gpg
+* brew install direnv
+* brew install fzf
+* brew install gh
+* brew install jq aws azure-cli
+* brew install consul nomad vault terraform
+* sudo ln -s /home/linuxbrew/.linuxbrew/bin/git /usr/local/bin/git
+* sudo ln -s /home/linuxbrew/.linuxbrew/bin/zsh /usr/local/bin/zsh
+
+### Ubuntu
+
+* apt-get install fonts-firacode
+
+### macOS
 
 * brew install mas
 * brew install telnet
-* brew install wireguard-tools
 * brew install reattach-to-user-namespace
 * brew install --cask 1password
 * brew install --cask alfred
@@ -61,6 +76,8 @@
 * brew install --cask zoom
 * mas install 1451685025 (WireGuard)
 * mas install 1295203466 (Windows RDP)
+* brew tap homebrew/cask-fonts
+* brew install --cask font-fira-code
 
 ## Additional Personal
 
@@ -80,9 +97,15 @@ https://www.anand-iyer.com/blog/2018/a-simpler-way-to-manage-your-dotfiles.html
 
 * alias dotfiles='/usr/local/bin/git --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
 * git clone --separate-git-dir=$HOME/.dotfiles git@github.com:reset/dotfiles-mac.git tmpdotfiles
+* dotfiles config --local status.showUntrackedFiles no
 * rsync --recursive --verbose --exclude '.git' tmpdotfiles/ $HOME/
 * rm -r tmpdotfiles
 
 ## Post Setup
 
 * vim - `:PlugInstall`
+
+## Resources
+
+* https://dev.to/bowmanjd/store-home-directory-config-files-dotfiles-in-git-using-bash-zsh-or-powershell-a-simple-approach-without-a-bare-repo-2if7
+* https://zachrussell.net/blog/map-caps-lock-to-control-windows/

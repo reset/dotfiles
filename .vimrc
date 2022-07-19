@@ -1,9 +1,6 @@
 syntax enable
 call plug#begin('~/.vim/plugged')
-Plug 'ludovicchabant/vim-gutentags'
 Plug 'junegunn/fzf.vim'
-Plug 'rust-lang/rust.vim'
-Plug 'racer-rust/vim-racer'
 Plug 'jeffkreeftmeijer/vim-numbertoggle'
 Plug 'vim-syntastic/syntastic'
 Plug 'chriskempson/base16-vim'
