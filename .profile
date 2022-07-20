@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-if [ -n "${REMOTE_CONTAINERS+x}" ]; then
+if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   if [ -z "$(pgrep gpg-agent)" ]; then
     eval "$(gpg-agent --daemon)"
   fi
 
   # Start ssh-agent if it isn't running
-  if [ -z "$SSH_AUTH_SOCK" ]; then
+  if [ -z "${SSH_AUTH_SOCK+x}" ]; then
     # Check for a currently running instance of the agent
     if [ -z "$(pgrep ssh-agent)" ]; then
       # Launch a new instance of the agent
