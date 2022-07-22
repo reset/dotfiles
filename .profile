@@ -23,5 +23,13 @@ export PATH="$HOME/.dotnet/tools:$HOME/.cargo/bin:$PATH"
 export TERM=xterm-256color
 export OMG_CONFIG_PATH="$HOME/.config/omg"
 
+if [ -f "$OMG_CONFIG_PATH/env" ]; then
+  source "$OMG_CONFIG_PATH/env"
+fi
+
+if [ -f "$OMG_CONFIG_PATH/secrets" ]; then
+  source "$OMG_CONFIG_PATH/secrets"
+fi
+
 # shellcheck source=/dev/null
 if [ -e /Users/reset/.nix-profile/etc/profile.d/nix.sh ]; then . /Users/reset/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
