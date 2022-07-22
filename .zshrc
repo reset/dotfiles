@@ -22,8 +22,8 @@ fi
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   plugins+=(tmux)
 
-  # PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
-  # if [ "$TMUX" = "" ]; then tmux; fi
+  PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
+  if [ "$TMUX" = "" ]; then tmux; fi
 
   export AWS_DEFAULT_REGION="us-west-2"
   export GOPATH=$HOME/go
