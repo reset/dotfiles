@@ -56,3 +56,5 @@
 	rebase = true
 [init]
 	defaultBranch = main
+[https]
+	postBuffer = 1048576000

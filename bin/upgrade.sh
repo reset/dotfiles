@@ -5,7 +5,8 @@ set -euo pipefail
 sudo apt-get update &&
   sudo apt-get upgrade -y &&
   sudo apt-get install -y \
-    fonts-firacode
+    fonts-firacode \
+    gnutls-bin
 
 curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
 
