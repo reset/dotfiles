@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+ulimit -n unlimited
+
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   if [ -z "$(pgrep gpg-agent)" ]; then
     eval "$(gpg-agent --daemon)"
