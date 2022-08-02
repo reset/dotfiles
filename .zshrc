@@ -44,3 +44,4 @@ export EDITOR=vim
 alias vi=vim
 alias dot='$(which git) --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
 
+if [ -e /home/reset/.nix-profile/etc/profile.d/nix.sh ]; then . /home/reset/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
