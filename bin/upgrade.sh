@@ -10,8 +10,6 @@ sudo apt-get update &&
     git-repair \
     gnutls-bin
 
-curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
-
 brew update && brew upgrade && brew install -q \
   awscli \
   azure-cli \
