@@ -32,6 +32,8 @@
 [core]
 	editor = vim
 	excludesfile = /Users/reset/.gitignore-global
+	eol = lf
+	autocrlf = input
 [commit]
 	gpgsign = true
 [gpg]
