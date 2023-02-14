@@ -3,6 +3,7 @@
 set -euo pipefail
 
 function upgrade_homebrew () {
+  echo "Updating Homebrew packages..."
   brew update && brew upgrade && brew install -q \
     awscli \
     azure-cli \
@@ -21,10 +22,12 @@ function upgrade_homebrew () {
     vault \
     zsh
 
+  echo "Cleaning up Homebrew packages..."
   brew cleanup
 }
 
 function upgrade_ubuntu () {
+  echo "Updating apt packages..."
   sudo apt-get update &&
     sudo apt-get upgrade -y &&
     sudo apt-get install -y \

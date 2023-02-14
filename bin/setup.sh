@@ -11,19 +11,84 @@ else
   HOMEBREW_REPOSITORY="/home/linuxbrew/.linuxbrew"
 fi
 
-function configure_macos() {
-  defaults write -g com.apple.swipescrolldirection -bool FALSE
+#
+# Main Functions
+#
+
+function configure_system () {
+  echo "Configuring System..."
+  if [[ $OSTYPE == 'darwin'* ]]; then
+    _configure_system_macos
+  fi
 }
 
 function install_homebrew () {
   if ! command -v brew &> /dev/null; then
+    echo "Installing Homebrew..."
     curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
   fi
 
   brew analytics off
 }
 
-function install_macos () {
+function install_packages () {
+  echo "Installing System Packages..."
+  if [[ $OSTYPE == 'darwin'* ]]; then
+    _install_packages_macos
+  else
+    _install_packages_ubuntu
+  fi
+}
+
+function install_symlinks () {
+  echo "Linking system software..."
+  if [[ $OSTYPE == 'darwin'* ]]; then
+    sudo ln -sf "$HOMEBREW_REPOSITORY/bin/pinentry-mac" /usr/local/bin/pinentry
+  fi
+  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/git" /usr/local/bin/git
+  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/gpg" /usr/local/bin/gpg
+  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/zsh" /usr/local/bin/zsh
+}
+
+function setup_home () {
+  echo "Setting up home directory..."
+  # Install tmux
+  if [ ! -d "$HOME/.tmux" ]; then
+    git clone https://github.com/gpakosz/.tmux.git "$HOME/.tmux"
+  fi
+
+  if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
+    git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"
+  fi
+
+  # Install ohmyzsh
+  if [ ! -d "$HOME/.oh-my-zsh" ]; then
+    curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash
+  fi
+
+  # Install Plug
+  curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
+
+  # Install base16-shell
+  if [ ! -d "$HOME/.config/base16-shell" ]; then
+    git clone https://github.com/chriskempson/base16-shell.git "$HOME/.config/base16-shell"
+  fi
+
+  # Install powerlevel10k
+  if [ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]; then
+    git clone https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
+  fi
+}
+
+#
+# Helper Functions
+#
+
+function _configure_system_macos () {
+  defaults write -g com.apple.swipescrolldirection -bool FALSE
+}
+
+function _install_packages_macos () {
   echo "Installing Brew packages..."
   brew tap homebrew/cask-fonts
 
@@ -38,6 +103,7 @@ function install_macos () {
     gh \
     git \
     git-lfs \
+    gpg2 \
     gnupg \
     jq \
     mas \
@@ -74,7 +140,7 @@ function install_macos () {
   mas install 441258766 # Magnet
 }
 
-function install_ubuntu () {
+function _install_packages_ubuntu () {
   sudo apt-get update &&
     sudo apt-get upgrade &&
     sudo apt-get install -y \
@@ -82,48 +148,8 @@ function install_ubuntu () {
       git
 }
 
-function install_symlinks () {
-  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/git" /usr/local/bin/git
-  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/zsh" /usr/local/bin/zsh
-}
-
 install_homebrew
-
-echo "Installing System Packages..."
-if [[ $OSTYPE == 'darwin'* ]]; then
-  configure_macos
-  install_macos
-else
-
-  install_ubuntu
-fi
-
-echo "Linking system software..."
+install_packages
+configure_system
 install_symlinks
-
-# Install tmux
-if [ ! -d "$HOME/.tmux" ]; then
-  git clone https://github.com/gpakosz/.tmux.git "$HOME/.tmux"
-fi
-
-if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
-  git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"
-fi
-
-# Install ohmyzsh
-if [ ! -d "$HOME/.oh-my-zsh" ]; then
-  curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash
-fi
-
-# Install Plug
-curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
-
-# Install base16-shell
-if [ ! -d "$HOME/.config/base16-shell" ]; then
-  git clone https://github.com/chriskempson/base16-shell.git "$HOME/.config/base16-shell"
-fi
-
-# Install powerlevel10k
-if [ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]; then
-  git clone https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
-fi
+setup_home

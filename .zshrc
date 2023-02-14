@@ -1,8 +1,11 @@
 DEFAULT_USER="reset"
-ZSH=$HOME/.oh-my-zsh
-ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
-ZSH_THEME="powerlevel10k/powerlevel10k"
-plugins=(git)
+export ZSH=$HOME/.oh-my-zsh
+export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
+export ZSH_THEME="powerlevel10k/powerlevel10k"
+export GOPATH=$HOME/go
+export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
+
+plugins=(git tmux)
 
 source $ZSH/oh-my-zsh.sh
 fpath=(~/.zsh $fpath)
@@ -22,22 +25,17 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
-if [ -z "${REMOTE_CONTAINERS+x}" ]; then
-  plugins+=(tmux)
+# todo @jamie: what is this line for?
+# PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
+if [ "$TMUX" = "" ]; then tmux; fi
 
-  # todo @jamie: what is this line for?
-  # PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
-  if [ "$TMUX" = "" ]; then tmux; fi
-
-  export AWS_DEFAULT_REGION="us-west-2"
-  export GOPATH=$HOME/go
-  export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
-  export GPG_TTY=$(tty)
-fi
+export AWS_DEFAULT_REGION="us-west-2"
+export GPG_TTY=$(tty)
 
 eval "$(direnv hook zsh)"
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 [ -f ~/.secrets ] && source ~/.secrets
+
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

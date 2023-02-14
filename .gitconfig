@@ -37,7 +37,7 @@
 [commit]
 	gpgsign = true
 [gpg]
-	program = gpg
+	program = /usr/local/bin/gpg
 [mergetool "Kaleidoscope"]
 	cmd = ksdiff --merge --output \"$MERGED\" --base \"$BASE\" -- \"$LOCAL\" --snapshot \"$REMOTE\" --snapshot
 	trustexitcode = true
