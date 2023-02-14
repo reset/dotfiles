@@ -1,5 +1,6 @@
 DEFAULT_USER="reset"
 ZSH=$HOME/.oh-my-zsh
+ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 ZSH_THEME="powerlevel10k/powerlevel10k"
 plugins=(git)
 
@@ -9,8 +10,10 @@ fpath=(~/.zsh $fpath)
 # Base16 Shell
 BASE16_SHELL="$HOME/.config/base16-shell/"
 [ -n "$PS1" ] && \
-  [ -s "$BASE16_SHELL/profile_helper.sh" ] && \
-    eval "$("$BASE16_SHELL/profile_helper.sh")"
+    [ -s "$BASE16_SHELL/profile_helper.sh" ] && \
+        source "$BASE16_SHELL/profile_helper.sh"
+
+base16_solarflare
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
@@ -22,7 +25,8 @@ fi
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   plugins+=(tmux)
 
-  PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
+  # todo @jamie: what is this line for?
+  # PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
   if [ "$TMUX" = "" ]; then tmux; fi
 
   export AWS_DEFAULT_REGION="us-west-2"
@@ -31,17 +35,9 @@ if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   export GPG_TTY=$(tty)
 fi
 
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 eval "$(direnv hook zsh)"
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 [ -f ~/.secrets ] && source ~/.secrets
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
-
-export EDITOR=vim
-
-alias vi=vim
-alias dot='$(which git) --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
-
-if [ -e /home/reset/.nix-profile/etc/profile.d/nix.sh ]; then . /home/reset/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer

@@ -60,3 +60,5 @@
 	defaultBranch = main
 [https]
 	postBuffer = 1048576000
+[lfs]
+	concurrenttransfers = 50
