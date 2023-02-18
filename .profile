@@ -29,7 +29,12 @@ if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   fi
 
   # Add ssh keys to ssh-agent
-  ssh-add "$HOME/.ssh/id_ed25519" &>/dev/null
+  if [ -f "$HOME/.ssh/id_ed25519" ]; then
+    ssh-add "$HOME/.ssh/id_ed25519" &>/dev/null
+  fi
+  if [ -f "$HOME/.ssh/admin_rsa" ]; then
+    ssh-add "$HOME/.ssh/admin_rsa" &>/dev/null
+  fi
 fi
 
 if [ -f "$OMG_CONFIG_PATH/env" ]; then
