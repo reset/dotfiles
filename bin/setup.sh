@@ -2,13 +2,13 @@
 
 set -euo pipefail
 
-export HOMEBREW_REPOSITORY
+export HOMEBREW_PREFIX
 export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 
 if [[ $OSTYPE == 'darwin'* ]]; then
-  HOMEBREW_REPOSITORY="/opt/homebrew"
+  HOMEBREW_PREFIX="/opt/homebrew"
 else
-  HOMEBREW_REPOSITORY="/home/linuxbrew/.linuxbrew"
+  HOMEBREW_PREFIX="/home/linuxbrew/.linuxbrew"
 fi
 
 #
@@ -43,11 +43,14 @@ function install_packages () {
 function install_symlinks () {
   echo "Linking system software..."
   if [[ $OSTYPE == 'darwin'* ]]; then
-    sudo ln -sf "$HOMEBREW_REPOSITORY/bin/pinentry-mac" /usr/local/bin/pinentry
+    sudo ln -sf "$HOMEBREW_PREFIX/bin/pinentry-mac" /usr/local/bin/pinentry
+  else
+    sudo ln -sf "$HOMEBREW_PREFIX/bin/pinentry" /usr/local/bin/pinentry
   fi
-  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/git" /usr/local/bin/git
-  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/gpg" /usr/local/bin/gpg
-  sudo ln -sf "$HOMEBREW_REPOSITORY/bin/zsh" /usr/local/bin/zsh
+  sudo ln -sf "$HOMEBREW_PREFIX/bin/git" /usr/local/bin/git
+  sudo ln -sf "$HOMEBREW_PREFIX/bin/gpg" /usr/local/bin/gpg
+  sudo ln -sf "$HOMEBREW_PREFIX/bin/gpg-agent" /usr/local/bin/gpg-agent
+  sudo ln -sf "$HOMEBREW_PREFIX/bin/zsh" /usr/local/bin/zsh
 }
 
 function setup_home () {
