@@ -113,6 +113,7 @@ function _install_packages_macos () {
     nomad \
     pinentry-mac \
     reattach-to-user-namespace \
+    scriptcs \
     shfmt \
     telnet \
     terraform \
