@@ -5,9 +5,10 @@ export ZSH_THEME="powerlevel10k/powerlevel10k"
 export GOPATH=$HOME/go
 export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
 
-plugins=(git tmux)
-
+plugins=(git z tmux ssh-agent)
+zstyle :omz:plugins:ssh-agent agent-forwarding on
 source $ZSH/oh-my-zsh.sh
+
 fpath=(~/.zsh $fpath)
 
 # Base16 Shell
