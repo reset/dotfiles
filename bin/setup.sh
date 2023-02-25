@@ -111,6 +111,7 @@ function _install_packages_macos () {
     jq \
     mas \
     nomad \
+    obs \
     pinentry-mac \
     reattach-to-user-namespace \
     scriptcs \
