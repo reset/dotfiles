@@ -134,6 +134,7 @@ function _install_packages_macos () {
   brew install --cask keybase
   brew install --cask dropbox
   brew install --cask notable
+  brew install --cask postman
   brew install --cask slack
   brew install --cask steam
   brew install --cask unity-hub
