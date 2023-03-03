@@ -133,6 +133,7 @@ function _install_packages_macos () {
   brew install --cask google-chrome
   brew install --cask keybase
   brew install --cask dropbox
+  brew install --cask nordvpn
   brew install --cask notable
   brew install --cask postman
   brew install --cask slack
