@@ -106,6 +106,7 @@ function _install_packages_macos () {
     gh \
     git \
     git-lfs \
+    go \
     gpg2 \
     gnupg \
     jq \
