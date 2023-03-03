@@ -104,6 +104,7 @@ function _install_packages_macos () {
     fzf \
     gcc \
     gh \
+    gimp \
     git \
     git-lfs \
     go \
