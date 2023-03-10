@@ -126,6 +126,7 @@ function _install_packages_macos () {
 
   echo "Installing Brew Cask packages..."
   brew install --cask 1password
+  brew install --cask 1password-cli
   brew install --cask alacritty
   brew install --cask alfred
   brew install --cask discord
