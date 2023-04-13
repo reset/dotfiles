@@ -16,6 +16,7 @@ function upgrade_homebrew () {
     git-lfs \
     gpg \
     jq \
+    maven \
     nomad \
     terraform \
     tmux \
