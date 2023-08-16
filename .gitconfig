@@ -21,7 +21,7 @@
 [mergetool]
 	prompt = false
 [user]
-	name = Jamie Winsor
+	name = Jamie Stormbreaker
 	email = jamie@onemoregame.com
 	signingkey = A3D661E75334E988
 [color]
@@ -47,11 +47,6 @@
 	cmd = ksdiff --partial-changeset --relative-path \"$MERGED\" -- \"$LOCAL\" \"$REMOTE\"
 [diff]
 	tool = Kaleidoscope
-[filter "lfs"]
-	required = true
-	clean = git-lfs clean -- %f
-	smudge = git-lfs smudge -- %f
-	process = git-lfs filter-process
 [submodule]
 	recurse = true
 [pull]
@@ -62,3 +57,8 @@
 	postBuffer = 1048576000
 [lfs]
 	concurrenttransfers = 50
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
