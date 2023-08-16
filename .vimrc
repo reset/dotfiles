@@ -21,6 +21,7 @@ set hlsearch
 set colorcolumn=100
 set noshowmode
 set rtp+=/usr/local/bin/fzf
+set relativenumber
 let g:indentLine_enabled=1
 let g:indentLine_char='¦'
 let g:better_whitespace_eabled=1
