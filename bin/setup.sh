@@ -103,6 +103,7 @@ function _install_packages_macos () {
     awscli \
     aws-sso-creds
     azure-cli \
+    blender \
     consul \
     coreutils \
     direnv \
