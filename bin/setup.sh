@@ -92,11 +92,16 @@ function _configure_system_macos () {
 }
 
 function _install_packages_macos () {
+  echo "Installing macOS system packages..."
+  softwareupdate --install-rosetta
+
   echo "Installing Brew packages..."
   brew tap homebrew/cask-fonts
+  brew tap jaxxstorm/tap
 
   brew install \
     awscli \
+    aws-sso-creds
     azure-cli \
     consul \
     coreutils \
@@ -112,6 +117,7 @@ function _install_packages_macos () {
     gnupg \
     jq \
     mas \
+    maven \
     nomad \
     obs \
     pinentry-mac \
