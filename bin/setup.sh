@@ -101,7 +101,7 @@ function _install_packages_macos () {
 
   brew install \
     awscli \
-    aws-sso-creds
+    aws-sso-creds \
     azure-cli \
     blender \
     consul \
@@ -123,6 +123,7 @@ function _install_packages_macos () {
     obs \
     pinentry-mac \
     reattach-to-user-namespace \
+    rust \
     scriptcs \
     shfmt \
     telnet \
@@ -161,8 +162,12 @@ function _install_packages_ubuntu () {
   sudo apt-get update &&
     sudo apt-get upgrade &&
     sudo apt-get install -y \
+      build-essential \
       curl \
-      git
+      fonts-firacode \
+      git \
+      git-repair
+      gnutls-bin
 }
 
 install_homebrew
@@ -170,3 +175,4 @@ install_packages
 configure_system
 install_symlinks
 setup_home
+

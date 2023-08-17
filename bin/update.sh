@@ -4,24 +4,7 @@ set -euo pipefail
 
 function upgrade_homebrew () {
   echo "Updating Homebrew packages..."
-  brew update && brew upgrade && brew install -q \
-    awscli \
-    azure-cli \
-    consul \
-    direnv \
-    fzf \
-    gcc \
-    gh \
-    git \
-    git-lfs \
-    gpg \
-    jq \
-    maven \
-    nomad \
-    terraform \
-    tmux \
-    vault \
-    zsh
+  brew update && brew upgrade
 
   echo "Cleaning up Homebrew packages..."
   brew cleanup
@@ -29,13 +12,7 @@ function upgrade_homebrew () {
 
 function upgrade_ubuntu () {
   echo "Updating apt packages..."
-  sudo apt-get update &&
-    sudo apt-get upgrade -y &&
-    sudo apt-get install -y \
-      build-essential \
-      fonts-firacode \
-      git-repair \
-      gnutls-bin
+  sudo apt-get update && sudo apt-get upgrade -y
 }
 
 if [[ $OSTYPE == 'darwin'* ]]; then
@@ -44,3 +21,4 @@ else
   upgrade_ubuntu
   upgrade_homebrew
 fi
+
