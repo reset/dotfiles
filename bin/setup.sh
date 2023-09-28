@@ -122,6 +122,8 @@ function _install_packages_macos () {
     nomad \
     obs \
     pinentry-mac \
+    python \
+    rar \
     reattach-to-user-namespace \
     rust \
     scriptcs \
