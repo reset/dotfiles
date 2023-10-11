@@ -103,6 +103,7 @@ function _install_packages_macos () {
     awscli \
     aws-sso-creds \
     azure-cli \
+    binutils \
     blender \
     consul \
     coreutils \
@@ -122,6 +123,7 @@ function _install_packages_macos () {
     nomad \
     obs \
     pinentry-mac \
+    pkgconfig \
     python \
     rar \
     reattach-to-user-namespace \
