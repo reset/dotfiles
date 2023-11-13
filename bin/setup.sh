@@ -120,7 +120,6 @@ function _install_packages_macos () {
     jq \
     mas \
     maven \
-    nomad \
     obs \
     pinentry-mac \
     pkgconfig \
@@ -148,6 +147,7 @@ function _install_packages_macos () {
   brew install --cask google-chrome
   brew install --cask keybase
   brew install --cask dropbox
+  brew install --cask nomad
   brew install --cask nordvpn
   brew install --cask notable
   brew install --cask postman
