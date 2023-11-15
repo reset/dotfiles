@@ -38,17 +38,23 @@ if [ -z "${REMOTE_CONTAINERS+x}" ]; then
 fi
 
 if [ -f "$OMG_CONFIG_PATH/env" ]; then
+  # shellcheck source=/dev/null
   source "$OMG_CONFIG_PATH/env"
 fi
 
 if [ -f "$OMG_CONFIG_PATH/secrets" ]; then
+  # shellcheck source=/dev/null
   source "$OMG_CONFIG_PATH/secrets"
 fi
 
 # shellcheck source=/dev/null
-if [ -e "$HOME/.nix-profile/etc/profile.d/nix.sh" ] ; then . "$HOME/.nix-profile/etc/profile.d/nix.sh"; fi # added by Nix installer
+if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
+  source '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+fi
 
+# shellcheck source=/dev/null
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # Load nvm
 
 alias vi=vim
 alias dot='$(which git) --git-dir=$HOME/.dotfiles/ --work-tree=$HOME'
+
