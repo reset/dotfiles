@@ -13,6 +13,9 @@ function upgrade_homebrew () {
 function upgrade_ubuntu () {
   echo "Updating apt packages..."
   sudo apt-get update && sudo apt-get upgrade -y
+
+  echo "Cleaning up apt packages..."
+  sudo apt autoremove -y
 }
 
 if [[ $OSTYPE == 'darwin'* ]]; then
