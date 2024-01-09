@@ -121,6 +121,8 @@ function _install_packages_macos () {
     mas \
     maven \
     obs \
+    p4 \
+    p4v \
     pinentry-mac \
     pkgconfig \
     python \
@@ -160,6 +162,7 @@ function _install_packages_macos () {
   echo "Installing Mac App Store packages..."
   mas install 1295203466 # Windos RDP
   mas install 441258766 # Magnet
+  mas install 1545870783 # System Color Picker
 }
 
 function _install_packages_ubuntu () {
