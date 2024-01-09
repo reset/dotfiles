@@ -7,7 +7,8 @@ function upgrade_homebrew () {
   brew update && brew upgrade
 
   echo "Cleaning up Homebrew packages..."
-  brew cleanup
+  brew cleanup -s
+  rm -rf "$(brew --cache)"
 }
 
 function upgrade_ubuntu () {
