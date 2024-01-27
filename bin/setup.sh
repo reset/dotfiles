@@ -108,6 +108,7 @@ function _install_packages_macos () {
     consul \
     coreutils \
     direnv \
+    ffmpeg \
     fzf \
     gcc \
     gh \
