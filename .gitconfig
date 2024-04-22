@@ -30,7 +30,7 @@
 [push]
 	default = simple
 [core]
-	editor = vim
+	editor = code --wait
 	excludesfile = /Users/reset/.gitignore-global
 	eol = lf
 	autocrlf = input
