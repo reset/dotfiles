@@ -10,7 +10,7 @@ export XDG_CONFIG_HOME="$HOME/.config"
 export NVM_DIR="$HOME/.nvm"
 export SSH_AGENT="$HOME/.ssh/ssh-agent"
 export TERM=xterm-256color
-export OMG_CONFIG_PATH="$XDG_CONFIG_HOME/omg"
+export OMG_CONFIG_PATH="$HOME/.config/omg"
 
 # Skip running in VSCode devcontainer
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
