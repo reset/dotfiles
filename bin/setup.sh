@@ -129,6 +129,7 @@ function _install_packages_macos () {
     python \
     rar \
     reattach-to-user-namespace \
+    ruby \
     rust \
     scriptcs \
     shfmt \
