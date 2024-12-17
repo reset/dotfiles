@@ -4,11 +4,19 @@
 
 1. Install [Gpg4win](https://www.gpg4win.org/)
 
-   ```cmd
-   choco install gpg4win
-   ```
+  ```cmd
+  choco install gpg4win
+  ```
 
 * <https://github.com/tonsky/FiraCode/wiki/Installing>
+
+## macOS Setup
+
+1. Install Command Line Tools
+
+  ```cmd
+  xcode-select --install
+  ```
 
 ## Setup
 
