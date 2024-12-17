@@ -23,7 +23,7 @@
 1. Setup `$HOME` directory with dotfiles
 
     ```bash
-    git clone --separate-git-dir=$HOME/.dotfiles git@github.com:reset/dotfiles.git tmpdotfiles
+    git clone --separate-git-dir=$HOME/.dotfiles https://github.com/reset/dotfiles.git tmpdotfiles
     dot config --local status.showUntrackedFiles no
     rsync --recursive --verbose --exclude '.git' tmpdotfiles/ $HOME/
     rm -r tmpdotfiles
