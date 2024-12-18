@@ -96,7 +96,6 @@ function _install_packages_macos () {
   softwareupdate --install-rosetta
 
   echo "Installing Brew packages..."
-  brew tap homebrew/cask-fonts
   brew tap jaxxstorm/tap
 
   brew install \
