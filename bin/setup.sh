@@ -42,6 +42,7 @@ function install_packages () {
 
 function install_symlinks () {
   echo "Linking system software..."
+  sudo mkdir -p /usr/local/bin
   if [[ $OSTYPE == 'darwin'* ]]; then
     sudo ln -sf "$HOMEBREW_PREFIX/bin/pinentry-mac" /usr/local/bin/pinentry
   else
@@ -88,7 +89,8 @@ function setup_home () {
 #
 
 function _configure_system_macos () {
-  defaults write -g com.apple.swipescrolldirection -bool FALSE
+  defaults write NSGlobalDomain com.apple.swipescrolldirection -bool false
+  _caps_lock_remap_macos
 }
 
 function _install_packages_macos () {
@@ -104,6 +106,7 @@ function _install_packages_macos () {
     azure-cli \
     binutils \
     blender \
+    brave-browser \
     consul \
     coreutils \
     direnv \
@@ -130,12 +133,10 @@ function _install_packages_macos () {
     reattach-to-user-namespace \
     ruby \
     rust \
-    scriptcs \
     shfmt \
     telnet \
     terraform \
     tmux \
-    vault \
     zsh
 
   echo "Installing Brew Cask packages..."
@@ -150,7 +151,6 @@ function _install_packages_macos () {
   brew install --cask google-chrome
   brew install --cask keybase
   brew install --cask dropbox
-  brew install --cask nomad
   brew install --cask nordvpn
   brew install --cask notable
   brew install --cask postman
@@ -165,6 +165,37 @@ function _install_packages_macos () {
   mas install 441258766 # Magnet
   mas install 1545870783 # System Color Picker
 }
+
+_caps_lock_remap_macos () {
+  plist_path="/Library/LaunchDaemons/com.local.keyremap.plist"
+
+  sudo bash -c "cat > $plist_path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local.keyremap</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/hidutil</string>
+        <string>property</string>
+        <string>--set</string>
+        <string>{"UserKeyMapping":[{"HIDKeyboardModifierMappingSrc":0x700000039,"HIDKeyboardModifierMappingDst":0x7000000E0}]}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+  echo "Plist file created at $plist_path"
+
+  # Load the LaunchDaemon
+  sudo launchctl load "$plist_path"
+  echo "Caps Lock remapped to Control successfully!"
+}
+
 
 function _install_packages_ubuntu () {
   sudo apt-get update &&
