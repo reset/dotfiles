@@ -15,6 +15,7 @@
 1. Install Command Line Tools
 
   ```cmd
+  sudo dseditgroup -o edit -a ${USERNAME} -t user admin
   xcode-select --install
   ```
 
