@@ -161,8 +161,9 @@ function _install_packages_macos () {
   brew install --cask zoom
 
   echo "Installing Mac App Store packages..."
-  mas install 1295203466 # Windos RDP
+  mas install 1295203466 # Windows RDP
   mas install 441258766 # Magnet
+  mas install 462058435 # Microsoft Excel
   mas install 1545870783 # System Color Picker
 }
 
