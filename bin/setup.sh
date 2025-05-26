@@ -109,6 +109,7 @@ function _install_packages_macos () {
     brave-browser \
     consul \
     coreutils \
+    deckset \
     direnv \
     ffmpeg \
     fzf \
@@ -134,6 +135,7 @@ function _install_packages_macos () {
     ruby \
     rust \
     shfmt \
+    telegram \
     telnet \
     terraform \
     tmux \
