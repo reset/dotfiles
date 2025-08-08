@@ -107,6 +107,7 @@ function _install_packages_macos () {
     binutils \
     blender \
     brave-browser \
+    cloc \
     consul \
     coreutils \
     deckset \
@@ -139,6 +140,7 @@ function _install_packages_macos () {
     telnet \
     terraform \
     tmux \
+    transmission-cli \
     zsh
 
   echo "Installing Brew Cask packages..."
