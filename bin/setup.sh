@@ -141,6 +141,7 @@ function _install_packages_macos () {
     terraform \
     tmux \
     transmission-cli \
+    whatsapp \
     zsh
 
   echo "Installing Brew Cask packages..."
@@ -153,6 +154,7 @@ function _install_packages_macos () {
   brew install --cask font-fira-code
   brew install --cask go-agent
   brew install --cask google-chrome
+  brew install --cask google-drive
   brew install --cask keybase
   brew install --cask dropbox
   brew install --cask nordvpn
