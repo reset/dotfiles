@@ -141,6 +141,7 @@ function _install_packages_macos () {
     terraform \
     tmux \
     transmission-cli \
+    vlc \
     whatsapp \
     zsh
 
