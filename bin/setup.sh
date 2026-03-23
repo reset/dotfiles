@@ -108,6 +108,8 @@ function _install_packages_macos () {
     blender \
     brave-browser \
     cloc \
+    claude \
+    claude-code \
     consul \
     coreutils \
     deckset \
