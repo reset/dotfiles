@@ -4,8 +4,7 @@ export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 export ZSH_THEME="powerlevel10k/powerlevel10k"
 export GOPATH=$HOME/go
 export GH_EDITOR="code --wait"
-# Why did I comment this out? What is wrong with the load order?
-# export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
+export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
 
 plugins=(git z tmux ssh-agent)
 zstyle :omz:plugins:ssh-agent agent-forwarding on
@@ -53,3 +52,4 @@ case ":$PATH:" in
 esac
 # pnpm end
 #
+
