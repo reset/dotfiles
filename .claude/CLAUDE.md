@@ -22,6 +22,8 @@
 - Prefer targeted, minimal changes over broad rewrites
 - Ask before destructive git operations
 - Do not commit unless explicitly requested
+- **Never** add `Co-Authored-By` trailers (or any AI attribution) to commit messages
+- **Never** modify git config (user.name, user.email, commit.gpgsign, etc.) or pass flags that bypass GPG signing (`--no-gpg-sign`, `-c commit.gpgsign=false`)
 - Principal engineer level — skip basics, go deep
 
 ### C# Patterns (from codebases)
