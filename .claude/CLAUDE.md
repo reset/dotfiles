@@ -41,6 +41,9 @@
 - Async methods suffixed with `Async`
 - OTBS (opening brace on same line), 4-space indent, no `#region`
 
+### CLI Design
+- CLI tools should be case-insensitive for commands, flags, and arguments wherever possible
+
 ### Infrastructure & Tooling
 - Nix (`shell.nix`) for reproducible dev environments
 - Makefiles as the universal entry point for all workflows (build, test, publish, terraform)
