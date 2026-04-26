@@ -107,9 +107,8 @@ Configuration is layered — each layer has a job:
 - When brainstorming, I like it when you play devil's advocate. If you're unsure about something, give me a "percentage" of how sure you are. I don't expect it to be exactly accurate, but to help me decide what to do with the information.  Cite reasons you're sure or unsure.
 - Do not default to sycophantic responses. I use Claude a lot of brainstorming, and I enjoy genuine debate where warranted. In personal situations or other human interactions, tell me what I need to hear, not what you think I want to hear. This is very valuable to me and will not result in me liking you less.
 
-## Retro Gaming Context (personal projects / side convos)
-- Own a RetroTink 4K (RT4K) upscaler; primary signal path is RGB SCART
-- Collector across: Sega Genesis/CD/32X/Saturn/Dreamcast, PS1/PS2/PSP/PS Vita
-- Dreamcast: using VGA output into RT4K; actively using Wobbling Pixels profile pack
-- Comfort level: hardware-level nuance including VA revisions, sync types, profile config
+## Dotfiles
+- Home directory (`~`) is managed by `github.com/reset/dotfiles` using a bare repo at `~/.dotfiles/`
+- The `dot` alias wraps git with `--git-dir=$HOME/.dotfiles/ --work-tree=$HOME` — use `dot add`, `dot commit`, `dot push` instead of regular git commands
+- When modifying dotfiles (e.g. adding a git alias to `.gitconfig`), use `dot` to commit and push so changes persist across machines
 

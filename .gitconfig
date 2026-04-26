@@ -12,6 +12,9 @@
 
   # Show files ignored by git:
   ign = ls-files -o -i --exclude-standard
+
+  # Delete local branches that have been merged into main
+  cl = "!f() { git switch main && git pull && git branch --merged main | grep -v '^[* ] main$' | xargs -r git branch -d; }; f"
 	dc = diff
 	dt = difftool
 	dc = diff

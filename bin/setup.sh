@@ -153,6 +153,7 @@ function _install_packages_macos () {
   brew install --cask alacritty
   brew install --cask alfred
   brew install --cask discord
+  brew install --cask docker
   brew install --cask dotnet-sdk
   brew install --cask font-fira-code
   brew install --cask go-agent
