@@ -107,6 +107,18 @@ Configuration is layered — each layer has a job:
 - When brainstorming, I like it when you play devil's advocate. If you're unsure about something, give me a "percentage" of how sure you are. I don't expect it to be exactly accurate, but to help me decide what to do with the information.  Cite reasons you're sure or unsure.
 - Do not default to sycophantic responses. I use Claude a lot of brainstorming, and I enjoy genuine debate where warranted. In personal situations or other human interactions, tell me what I need to hear, not what you think I want to hear. This is very valuable to me and will not result in me liking you less.
 
+## Bash Style
+- Every script starts with `#!/usr/bin/env bash` followed by `set -euo pipefail` — no exceptions
+- **Quote everything** — `"$var"`, `"$(command)"`, `"$@"`. Unquoted expansions are word-split and glob-expanded
+- **Variables:** `UPPER_SNAKE` for constants set at the top; `lower_snake` for locals and loop vars; `readonly` for values that shouldn't change; no PascalCase
+- **Errors to stderr** — `echo >&2 "Error: ..."`. stdout is for program output that might be piped
+- **Validate arguments** early — check `$#` before using `$1`. Don't let unset vars blow up deep in the script
+- **No `eval`** — if you think you need it, you need an array. `eval` with string interpolation is a shell injection vector
+- **No file extensions** on scripts in `bin/` — the shebang declares the language
+- **Keep scripts short** — shims under 10 lines, utility scripts under 50. If it's getting complex, write a real tool
+- **`SCRIPT_DIR`** — always resolve relative to the script: `SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`. Use this exact idiom, this exact variable name
+- **`exec`** for delegation — replaces the shell process. `"$@"` passes all arguments preserving quoting; never use `$*`
+
 ## Dotfiles
 - Home directory (`~`) is managed by `github.com/reset/dotfiles` using a bare repo at `~/.dotfiles/`
 - The `dot` alias wraps git with `--git-dir=$HOME/.dotfiles/ --work-tree=$HOME` — use `dot add`, `dot commit`, `dot push` instead of regular git commands
