@@ -57,16 +57,16 @@ function install_symlinks () {
 function setup_home () {
   echo "Setting up home directory..."
   # Install tmux
-  if [ ! -d "$HOME/.tmux" ]; then
+  if [[ ! -d "$HOME/.tmux" ]]; then
     git clone https://github.com/gpakosz/.tmux.git "$HOME/.tmux"
   fi
 
-  if [ ! -d "$HOME/.tmux/plugins/tpm" ]; then
+  if [[ ! -d "$HOME/.tmux/plugins/tpm" ]]; then
     git clone https://github.com/tmux-plugins/tpm "$HOME/.tmux/plugins/tpm"
   fi
 
   # Install ohmyzsh
-  if [ ! -d "$HOME/.oh-my-zsh" ]; then
+  if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh | bash
   fi
 
@@ -74,12 +74,12 @@ function setup_home () {
   curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 
   # Install base16-shell
-  if [ ! -d "$HOME/.config/base16-shell" ]; then
+  if [[ ! -d "$HOME/.config/base16-shell" ]]; then
     git clone https://github.com/chriskempson/base16-shell.git "$HOME/.config/base16-shell"
   fi
 
   # Install powerlevel10k
-  if [ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]; then
+  if [[ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]]; then
     git clone https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
   fi
 }
@@ -177,10 +177,10 @@ function _install_packages_macos () {
   mas install 1545870783 # System Color Picker
 }
 
-_caps_lock_remap_macos () {
-  plist_path="/Library/LaunchDaemons/com.local.keyremap.plist"
+function _caps_lock_remap_macos () {
+  local plist_path="/Library/LaunchDaemons/com.local.keyremap.plist"
 
-  sudo bash -c "cat > $plist_path" <<EOF
+  sudo bash -c "cat > \"$plist_path\"" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -216,7 +216,7 @@ function _install_packages_ubuntu () {
       curl \
       fonts-firacode \
       git \
-      git-repair
+      git-repair \
       gnutls-bin
 }
 
@@ -225,4 +225,3 @@ install_packages
 configure_system
 install_symlinks
 setup_home
-
