@@ -1,0 +1,60 @@
+{
+  "editor.fontFamily": "Fira Code",
+  "editor.fontSize": 16,
+  "editor.lineNumbers": "relative",
+  "omnisharp.monoPath": "/Library/Frameworks/Mono.framework/Versions/Current",
+  "[python]": {
+    "editor.formatOnType": true,
+  },
+  "workbench.startupEditor": "none",
+  "terminal.integrated.defaultProfile.windows": "Git Bash",
+  "terminal.integrated.fontSize": 14,
+  "redhat.telemetry.enabled": false,
+  "git.autofetch": true,
+  "cmake.configureOnOpen": true,
+  "explorer.confirmDelete": false,
+  "githubPullRequests.pullBranch": "never",
+  "editor.minimap.enabled": false,
+  "editor.inlineSuggest.enabled": true,
+  "sqltools.connections": [],
+  "git.openRepositoryInParentFolders": "always",
+  "security.workspace.trust.untrustedFiles": "open",
+  "xml.server.vmargs": "-Xmx128M",
+  "editor.rulers": [
+    {
+      "column": 100,
+      "color": "#F59700"
+    },
+    {
+      "column": 120,
+      "color": "#E81E0C"
+    }
+  ],
+  "mssql.connectionGroups": [
+    {
+      "name": "ROOT",
+      "id": "A70B8C5A-9037-4C3A-91FD-F7AEFB3ECAB0",
+    },
+  ],
+  "mssql.connections": [],
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "[dockercompose]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true,
+    },
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+  },
+  "[github-actions-workflow]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml",
+  },
+  "chat.editor.fontSize": 16,
+  "chat.fontSize": 16,
+  "claudeCode.preferredLocation": "panel",
+  "claudeCode.useTerminal": true,
+  "docker.extension.enableComposeLanguageServer": false,
+}
