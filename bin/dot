@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Wrapper around the dotfiles bare repo so `dot` works in any shell —
+# interactive zsh, scripts, cron, Claude Code's Bash tool, etc.
+exec git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME" "$@"
