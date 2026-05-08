@@ -1,0 +1,65 @@
+# Starter Makefile for a CMS-to-static migration project.
+# Adapt to your specific generator (zola/hugo/eleventy/astro) and content shape.
+#
+# The pattern: every step is a named target, every phase is reproducible,
+# `make refresh` repulls fresh content from upstream, `make build` produces
+# the deployable site. When something breaks, you can re-run one phase to
+# isolate the cause.
+
+.PHONY: help build serve fetch extract refresh mirror-media css-bundle scrape extract-scraped clean
+
+help:
+	@echo "Primary workflow:"
+	@echo "  refresh         fetch + extract + mirror-media (full content refresh)"
+	@echo "  fetch           Pull source CMS REST API into _migration/api-cache/"
+	@echo "  extract         Generate content/ from API cache"
+	@echo "  mirror-media    Download media assets into static/_media/"
+	@echo "  css-bundle      Concat upstream CSS chunks into single bundle"
+	@echo "  build           Build the static site to public/"
+	@echo "  serve           Run dev server"
+	@echo ""
+	@echo "Legacy / fallback (if no API):"
+	@echo "  scrape          Mirror live site HTML into _migration/scraped/"
+	@echo "  extract-scraped Generate content/ from HTML mirror"
+	@echo ""
+	@echo "  clean           Remove build output and intermediate artifacts"
+
+# Replace 'zola' with hugo / eleventy / astro / etc.
+build:
+	zola build
+
+serve:
+	zola serve --port 1111
+
+# Replace with whatever fetcher the project uses (dotnet/python/node/etc.)
+fetch:
+	dotnet run --project _migration/Extractor -- fetch _migration/api-cache
+
+extract:
+	rm -rf content/news content/roster content/legal
+	dotnet run --project _migration/Extractor -- process _migration/api-cache content
+
+refresh: fetch extract mirror-media
+	@echo "Refresh complete. Run 'make build' or 'make serve' next."
+
+# Pulls every URL listed in media-urls.txt into static/_media/
+# preserving the upstream path structure.
+mirror-media:
+	cd static && wget --no-clobber --no-host-directories --force-directories \
+	    -e robots=off -i ../_migration/api-cache/media-urls.txt
+
+# For Nuxt/Vue sites that code-split CSS: pull every component CSS chunk
+# referenced from the entry JS, concat into one bundle the base template links.
+css-bundle:
+	@bash _migration/css-bundle.sh
+
+# Fallback if no API: mirror the live site as static HTML.
+scrape:
+	@bash _migration/scrape.sh
+
+extract-scraped:
+	rm -rf content/news content/roster content/legal
+	dotnet run --project _migration/Extractor -- scrape _migration/scraped content
+
+clean:
+	rm -rf public _migration/Extractor/bin _migration/Extractor/obj
