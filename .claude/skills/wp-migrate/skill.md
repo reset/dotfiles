@@ -188,7 +188,7 @@ Templates wrap `{{ page.content | safe }}` (or equivalent) inside the outer wrap
 
 ## Architecture pattern that worked
 
-```
+```text
 project/
 ├── _migration/                  # source-of-truth fetched data (gitignored bin/obj/cache)
 │   ├── api-cache/               # JSON pulled from REST API
@@ -230,7 +230,7 @@ Splitting fetch from process means you can iterate on the extractor without re-h
 
 A starter Makefile is in `assets/Makefile.template` — copy and adapt. It wires:
 
-```
+```text
 make fetch          → pulls API into _migration/api-cache/
 make extract        → runs extractor against cache, writes content/
 make mirror-media   → downloads referenced /_media/ images into static/_media/
