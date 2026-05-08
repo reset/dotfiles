@@ -1,6 +1,9 @@
 # Source nix-direnv if available (provides a better use_nix with caching and progress output).
 # Sourcing from a stable path avoids the `nix-build '<nixpkgs>' -A nix-direnv`
 # round-trip on every direnv load (~1.5s saved per `cd`).
+# Falls back to direnv's built-in use_nix if nix-direnv isn't installed
+# (still works, just slower) and warns so the gap is visible.
+_nix_direnv_loaded=0
 for _nix_direnv in \
   "${HOME}/.nix-profile/share/nix-direnv/direnvrc" \
   "/opt/homebrew/share/nix-direnv/direnvrc" \
@@ -8,7 +11,12 @@ for _nix_direnv in \
   "/run/current-system/sw/share/nix-direnv/direnvrc"; do
   if [[ -f "${_nix_direnv}" ]]; then
     source "${_nix_direnv}"
+    _nix_direnv_loaded=1
     break
   fi
 done
-unset _nix_direnv
+if [[ "${_nix_direnv_loaded}" -eq 0 ]]; then
+  echo >&2 "direnv: nix-direnv not found — dev shell loads will be slow."
+  echo >&2 "  install: nix-env -iA nixpkgs.nix-direnv"
+fi
+unset _nix_direnv _nix_direnv_loaded
