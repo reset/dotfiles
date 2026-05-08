@@ -57,7 +57,7 @@ Look for:
 
 Each item is a one-time template change. Once shipped, stop iterating.
 
-**1. Block-based meta architecture.** Refactor `base.html` so every meta tag is a Tera/Jinja block with a config-level default. Per-page templates override only what they need. Avoids deeply-nested `{% if page %}{% set %}{% else %}` chains. Pattern from Pat's `~/code/omg-website/site/templates/base.html`:
+**1. Block-based meta architecture.** Refactor `base.html` so every meta tag is a Tera/Jinja block with a config-level default. Per-page templates override only what they need. Avoids deeply-nested `{% if page %}{% set %}{% else %}` chains. Pattern:
 
 ```html
 <link rel="canonical" href="{% block canonical %}{{ config.base_url | safe }}{% endblock canonical %}">
@@ -96,7 +96,29 @@ Build the JSON-LD blocks inline in the page template's `extra_head` or `ld_extra
 </script>
 ```
 
-**Reference Pat's `~/code/omg-website/site/templates/post.html` for the BlogPosting recipe.** It's been validated against Google Rich Results Test.
+A canonical BlogPosting block, ready to drop into a post template:
+
+```html
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "@id": "{{ page.permalink | safe }}#article",
+  "headline": {{ page.title | json_encode() | safe }},
+  "url": "{{ page.permalink | safe }}",
+  "datePublished": "{{ page.date }}",
+  {% if page.updated %}"dateModified": "{{ page.updated }}",{% else %}"dateModified": "{{ page.date }}",{% endif %}
+  {% if page.description %}"description": {{ page.description | json_encode() | safe }},{% endif %}
+  {% if page.extra.cover %}"image": "{{ config.base_url | safe }}{{ page.extra.cover }}",{% endif %}
+  "author": { "@type": "Person", "name": "{{ page.extra.author | default(value=config.title) }}" },
+  "publisher": { "@id": "{{ config.base_url | safe }}#organization" },
+  "mainEntityOfPage": "{{ page.permalink | safe }}",
+  "inLanguage": "en-US"
+}
+</script>
+```
+
+Validate with Google's Rich Results Test before declaring it done.
 
 **4. `article:` OG meta on posts.** `published_time`, `modified_time`, `author`, `section`. Slack/Discord/LinkedIn read these, JSON-LD alone isn't enough.
 
@@ -113,30 +135,34 @@ This is where SEO actually moves. Tier 1 sets the floor; Tier 2 raises the ceili
 **Source-of-truth question.** If descriptions live in Markdown frontmatter and the content is regenerated from an upstream source (WP Extractor, Sanity sync, etc.), manual edits get overwritten. Solution: store SEO overrides in a separate file — for Zola, `config.toml` `[extra.seo]` keyed by slug works well:
 
 ```toml
-[extra.seo.heroes]
-reset = "Reset, The Bulwark — a Sci-Fi Tank hero in Spellcraft. Dictates battle by repositioning allies and enemies, then drops AoE damage on them."
+[extra.seo.<section>]
+"<slug>" = "<140-160 char description with subject, category, brand>"
 
-[extra.seo.news]
-"this-is-spellcraft" = "A free-to-play Real-Time Battler where you command a team of heroes and cast spells in real time to outplay your opponents."
+# Two illustrative shapes:
+[extra.seo.products]
+"some-product" = "<Product Name> — a <category> product from <Brand>. <One-line value prop>. Get yours today."
+
+[extra.seo.posts]
+"some-post" = "<Post topic> in 140-160 chars, front-loading the searchable term, ending with brand context."
 ```
 
-Templates prefer the override, fall back to `page.description`, fall back to `config.description`. This survives `make extract` / sync runs and keeps SEO copy in one auditable place.
+Templates prefer the override, fall back to `page.description`, fall back to `config.description`. This survives content regeneration and keeps SEO copy in one auditable place.
 
 **Patterns for description writing:**
-- Lead with the **subject** (hero name, post title) and **role** ("DPS hero", "Dev Blog post").
-- Include the **product/site noun** (game name, studio name, category).
+- Lead with the **subject** (the noun the page is about) and **category** (the searchable type — "DPS hero", "blog post", "kitchen knife", whatever fits the domain).
+- Include the **product/site noun** (game name, studio name, brand, category).
 - Include the **genre / category** (Real-Time Battler, free-to-play, etc.).
 - End with a hook — a verb phrase, a CTA, or a benefit.
 - Avoid in-character flavor text. "Now you see me, now you're gone" is hilarious in context but useless in a SERP.
 
 **8. Page titles front-loaded with intent keywords.** Compare:
-- ❌ `"Reset — Spellcraft"`
-- ✓ `"Reset, The Bulwark — Spellcraft"`
-- ✓✓ `"Reset — Battle Droid Tank Hero | Spellcraft"`
+- ❌ `"<Subject> — <Brand>"`
+- ✓ `"<Subject>, <Category> — <Brand>"`
+- ✓✓ `"<Subject> — <Specific descriptor + searchable noun> | <Brand>"`
 
 Add the role / category to the title. Searchable terms should appear before the brand suffix. Don't go more than ~60 characters total or it truncates.
 
-**9. Image alt text.** Decorative images (`alt=""`) are correct — accessibility win. Content images (hero portraits, news covers, product photos) need descriptive alt. Format: `{subject}, {role/category}` (e.g., `"Reset, The Bulwark hero in Spellcraft"`). Powers image search and accessibility simultaneously.
+**9. Image alt text.** Decorative images (`alt=""`) are correct — accessibility win. Content images (subject portraits, post covers, product photos) need descriptive alt. Format: `{subject}, {role/category}` (e.g., `"<Subject Name>, <Category> in <Brand>"`). Powers image search and accessibility simultaneously.
 
 **10. Internal linking.** This is high-value and almost always neglected. Hero pages should link to related heroes (same role, same world). News posts should link to relevant hero pages. Build authority flow inside the site. **Often more impactful than any single schema addition.**
 
