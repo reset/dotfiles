@@ -1,0 +1,14 @@
+# Source nix-direnv if available (provides a better use_nix with caching and progress output).
+# Sourcing from a stable path avoids the `nix-build '<nixpkgs>' -A nix-direnv`
+# round-trip on every direnv load (~1.5s saved per `cd`).
+for _nix_direnv in \
+  "${HOME}/.nix-profile/share/nix-direnv/direnvrc" \
+  "/opt/homebrew/share/nix-direnv/direnvrc" \
+  "/usr/local/share/nix-direnv/direnvrc" \
+  "/run/current-system/sw/share/nix-direnv/direnvrc"; do
+  if [[ -f "${_nix_direnv}" ]]; then
+    source "${_nix_direnv}"
+    break
+  fi
+done
+unset _nix_direnv
