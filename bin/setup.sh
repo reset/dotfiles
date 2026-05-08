@@ -175,6 +175,7 @@ function _install_packages_macos () {
   mas install 441258766 # Magnet
   mas install 462058435 # Microsoft Excel
   mas install 1545870783 # System Color Picker
+  mas install 1569813296 # 1Password for Safari
 }
 
 function _caps_lock_remap_macos () {
