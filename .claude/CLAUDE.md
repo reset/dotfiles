@@ -123,4 +123,9 @@ Configuration is layered — each layer has a job:
 - Home directory (`~`) is managed by `github.com/reset/dotfiles` using a bare repo at `~/.dotfiles/`
 - The `dot` alias wraps git with `--git-dir=$HOME/.dotfiles/ --work-tree=$HOME` — use `dot add`, `dot commit`, `dot push` instead of regular git commands
 - When modifying dotfiles (e.g. adding a git alias to `.gitconfig`), use `dot` to commit and push so changes persist across machines
+- **Treat the dotfiles repo as if it could be public** regardless of current visibility. Only commit content that is safe to publish.
+- **Never** commit secrets, tokens, auth credentials, private endpoints, or files that accumulate them over time. Specifically: `~/.claude/settings.json` is intentionally **untracked** — its `mcpServers`, `permissions.allow`, and `hooks` sections grow over time and can end up containing sensitive content. Same goes for `~/.claude.json`, `~/.aws/`, `~/.ssh/` (private keys), `~/.gnupg/`, or any service-specific credential files.
+- **Track:** stable helper scripts and config without secrets — `~/.claude/CLAUDE.md`, `~/.claude/hook-*.sh`, `~/.claude/statusline-*.sh`, `~/bin/<tool>`, shell rc files (`.zshrc`, `.bashrc`), `.gitconfig` (no signing keys inline), tmux config, etc.
+- When you need a hook or setting to follow you across machines, **document the snippet in `~/.claude/CLAUDE.md`** instead of tracking the live file. The instructions are tracked; the live state stays per-machine.
+- When in doubt, don't track. Adding a file later is easy; redacting after a leak is not.
 
