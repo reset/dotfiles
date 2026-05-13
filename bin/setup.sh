@@ -105,7 +105,6 @@ function _install_packages_macos () {
     aws-sso-creds \
     azure-cli \
     binutils \
-    blender \
     brave-browser \
     cloc \
     claude \
