@@ -1,6 +1,10 @@
 set-window-option -g mode-keys vi
 set-option -g allow-passthrough on
 
+# Pass Shift+Enter through to Claude Code prompts (and other apps using extended keys).
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+
 set-option -g default-shell /usr/local/bin/zsh
 
 bind-key -T copy-mode-vi v send -X begin-selection
