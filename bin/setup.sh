@@ -52,6 +52,11 @@ function install_symlinks () {
   sudo ln -sf "$HOMEBREW_PREFIX/bin/gpg" /usr/local/bin/gpg
   sudo ln -sf "$HOMEBREW_PREFIX/bin/gpg-agent" /usr/local/bin/gpg-agent
   sudo ln -sf "$HOMEBREW_PREFIX/bin/zsh" /usr/local/bin/zsh
+
+  # GPG requires 700 on its home dir — rsync during dotfile bootstrap creates it
+  # at 755, which causes "unsafe permissions" warnings and operation timeouts.
+  mkdir -p "$HOME/.gnupg"
+  chmod 700 "$HOME/.gnupg"
 }
 
 function setup_home () {
