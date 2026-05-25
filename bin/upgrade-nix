@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 # Upgrade the system Nix installation to the latest stable release.
 #
-# Must use the profile-linked nix binary, not the one resolved from the
-# current shell PATH — the dev shell (via direnv/nix-direnv) puts a
-# store-path nix directly in PATH, and nix upgrade-nix rejects binaries
-# that aren't installed through a profile.
+# Two workarounds baked in for macOS multi-user installs:
 #
-# Requires sudo because Nix is installed multi-user on macOS — the daemon
-# and store are owned by root.
+# 1. Call the profile-linked nix binary directly rather than relying on
+#    $PATH — the dev shell puts a store-path nix in PATH, and upgrade-nix
+#    rejects binaries that aren't installed through a profile.
+#
+# 2. Pass --profile explicitly — nix 2.25.x has a bug where it resolves
+#    its own binary via realpath(), gets the store path, and then fails
+#    the "is this binary in a profile?" check even when called via the
+#    profile path. --profile bypasses that self-detection entirely.
+#
+# Requires sudo because Nix is installed multi-user on macOS.
 set -euo pipefail
 
 readonly NIX="/nix/var/nix/profiles/default/bin/nix"
+readonly PROFILE="/nix/var/nix/profiles/default"
 
 if [[ ! -x "$NIX" ]]; then
   echo >&2 "error: nix not found at $NIX — is Nix installed multi-user?"
   exit 1
 fi
 
-sudo "$NIX" upgrade-nix "$@"
+sudo "$NIX" upgrade-nix --profile "$PROFILE" "$@"
