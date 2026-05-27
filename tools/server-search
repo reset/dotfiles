@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# server-search — search for files on the media server
+# Usage: server-search <query>
+#
+# Searches MEDIA_HOST:MEDIA_PATH for files and directories matching the query.
+# Case-insensitive. Spaces in the query become wildcards (fuzzy match).
+#
+# Environment overrides:
+#   MEDIA_HOST   SSH target        (default: reset@192.168.1.28)
+#   MEDIA_PATH   Search root path  (default: /var/lib/transmission-daemon/downloads)
+
+MEDIA_HOST="${MEDIA_HOST:-reset@192.168.1.28}"
+MEDIA_PATH="${MEDIA_PATH:-/var/lib/transmission-daemon/downloads}"
+
+usage() {
+    echo "Usage: server-search <query>" >&2
+    echo "" >&2
+    echo "Case-insensitive. Spaces become wildcards: \"sonic cd\" matches" >&2
+    echo "\"Sonic CD (USA).7z\", \"Sonic the Hedgehog CD\", etc." >&2
+    echo "" >&2
+    echo "Environment:" >&2
+    echo "  MEDIA_HOST   SSH target (default: $MEDIA_HOST)" >&2
+    echo "  MEDIA_PATH   Search root (default: $MEDIA_PATH)" >&2
+    exit 1
+}
+
+[[ $# -eq 0 ]] && usage
+
+# Join args and replace spaces with * for fuzzy matching
+query="$*"
+pattern="*${query// /*}*"
+
+ssh "$MEDIA_HOST" "
+find '$MEDIA_PATH' -iname '$pattern' \
+    -not -name '*.part' \
+    -not -name '*.tmp' \
+    2>/dev/null \
+| sort \
+| while IFS= read -r f; do
+    if [ -f \"\$f\" ]; then
+        size=\$(du -sh \"\$f\" 2>/dev/null | cut -f1)
+        printf '%-8s %s\n' \"\$size\" \"\${f#${MEDIA_PATH}/}\"
+    else
+        printf '%-8s %s\n' '[dir]' \"\${f#${MEDIA_PATH}/}\"
+    fi
+done
+"
