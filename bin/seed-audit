@@ -7,8 +7,18 @@ for at least 48 hours. Failing to meet both gets you an HnR strike; three strike
 restricts your account. This tool marks a torrent safe only when both conditions
 are satisfied.
 
-Usage: seed-audit [--host HOST] [--port PORT] [--user USER] [--pass PASS]
-                  [--min-ratio N] [--min-hours N] [--delete-data]
+Safe torrents are sorted by size (largest first) and shown 10 at a time. Numbers
+are global — you can type any number from any page at the deletion prompt.
+
+Usage: seed-audit [--page N] [--page-size N] [--all-pages]
+                  [--sort {size,ratio}]
+                  [--host HOST] [--port PORT] [--user USER] [--pass PASS]
+                  [--min-ratio N] [--min-hours N] [--delete-data] [--yes]
+
+Examples:
+  seed-audit              # page 1 of safe torrents, sorted by size
+  seed-audit --page 2     # page 2
+  seed-audit --all-pages  # show everything at once
 
 Defaults use conservative thresholds (1.0 ratio, 72h) giving a buffer above the
 strict IPT minimums (1.0 ratio, 48h).
@@ -165,6 +175,14 @@ def main():
                         help=f"Minimum ratio to consider obligation met (default: {DEFAULT_RATIO})")
     parser.add_argument("--min-hours",   type=int, default=DEFAULT_HOURS,
                         help=f"Minimum seed time in hours (default: {DEFAULT_HOURS})")
+    parser.add_argument("--sort",        choices=["size", "ratio"], default="size",
+                        help="Sort safe torrents by size or ratio (default: size)")
+    parser.add_argument("--page",        type=int, default=1,
+                        help="Page of safe torrents to show (default: 1)")
+    parser.add_argument("--page-size",   type=int, default=10,
+                        help="Number of safe torrents per page (default: 10)")
+    parser.add_argument("--all-pages",   action="store_true",
+                        help="Show all safe torrents at once, ignoring pagination")
     parser.add_argument("--delete-data", action="store_true",
                         help="Also delete downloaded files when removing a torrent")
     parser.add_argument("--yes",         action="store_true",
@@ -201,25 +219,40 @@ def main():
     seeding_active  = [t for t in completed if not is_safe(t) and not is_stopped(t)]
     stopped_at_risk = [t for t in completed if not is_safe(t) and is_stopped(t)]
 
-    # Sort all groups by ratio descending
-    safe.sort(key=lambda t: t["uploadRatio"], reverse=True)
+    # Sort safe by chosen key; informational lists always by ratio
+    sort_key = (lambda t: t["totalSize"]) if args.sort == "size" else (lambda t: t["uploadRatio"])
+    safe.sort(key=sort_key, reverse=True)
     seeding_active.sort(key=lambda t: t["uploadRatio"], reverse=True)
     stopped_at_risk.sort(key=lambda t: t["uploadRatio"], reverse=True)
 
     # ── SAFE TO REMOVE ──────────────────────────────────────────────────────────
     if safe:
+        total_pages = (len(safe) + args.page_size - 1) // args.page_size
+        if args.all_pages:
+            page_slice = safe
+            page_label = f"all {len(safe)}"
+        else:
+            page     = max(1, min(args.page, total_pages))
+            lo       = (page - 1) * args.page_size
+            hi       = lo + args.page_size
+            page_slice = safe[lo:hi]
+            page_label = f"page {page}/{total_pages}, #{lo+1}–{min(hi, len(safe))} of {len(safe)}"
+
         print()
-        print(colored(f"SAFE TO REMOVE  ({len(safe)} torrents — ratio ≥ {args.min_ratio} AND seeded ≥ {args.min_hours}h — IPT HnR cleared)", BOLD + GREEN))
+        print(colored(f"SAFE TO REMOVE  ({page_label} — ratio ≥ {args.min_ratio} AND seeded ≥ {args.min_hours}h — IPT HnR cleared)", BOLD + GREEN))
         if stopped_safe:
-            print(colored(f"  ({len(stopped_safe)} of these are stopped and no longer seeding)", DIM))
+            print(colored(f"  ({len(stopped_safe)} of {len(safe)} total are stopped and no longer seeding)", DIM))
         print(colored("─" * 80, GREEN))
-        for i, t in enumerate(safe, 1):
-            idx    = colored(f"{i:>3}", BOLD)
+        for global_i, t in ((lo + i + 1, page_slice[i]) for i in range(len(page_slice))):
+            idx    = colored(f"{global_i:>3}", BOLD)
             ratio  = colored(fmt_ratio(t["uploadRatio"]), GREEN)
             dur    = colored(fmt_duration(t["secondsSeeding"]), CYAN)
             size   = colored(fmt_size(t["totalSize"]), DIM)
             paused = colored(" [stopped]", DIM) if is_stopped(t) else ""
             print(f"  {idx}  [{ratio}] [{dur:>9}]  {t['name']} ({size}){paused}")
+        if not args.all_pages and total_pages > 1:
+            print()
+            print(colored(f"  Next page: seed-audit --page {min(page+1, total_pages)}", DIM))
     else:
         print()
         print(colored("No torrents have met the HnR threshold yet.", YELLOW))
@@ -268,7 +301,7 @@ def main():
     if args.yes:
         to_remove = safe
     else:
-        prompt = f"Remove which? (1-{len(safe)}, ranges like 1-3, \"all\", or q to quit): "
+        prompt = f"Remove which? (1-{len(safe)}, ranges like 1-3, \"all\", or q to quit — numbers are global across all pages): "
         try:
             raw = input(prompt).strip().lower()
         except (EOFError, KeyboardInterrupt):
