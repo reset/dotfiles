@@ -111,6 +111,7 @@ function _install_packages_macos () {
     azure-cli \
     binutils \
     brave-browser \
+    cdrdao \
     cloc \
     claude \
     claude-code \
@@ -134,6 +135,7 @@ function _install_packages_macos () {
     obs \
     p4 \
     p4v \
+    p7zip \
     pinentry-mac \
     pkgconfig \
     python \
