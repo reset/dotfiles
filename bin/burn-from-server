@@ -115,7 +115,7 @@ work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
 local_file="$work_dir/$(basename "$rel_path")"
-rsync -a --progress "${MEDIA_HOST}:${remote_file}" "$local_file"
+rsync -a --progress --protect-args "${MEDIA_HOST}:${remote_file}" "$local_file"
 
 echo ""
 "$SCRIPT_DIR/burn-disc" "$local_file" ${speed:+--speed "$speed"}
