@@ -7,13 +7,19 @@ Optionally pass a platform name for platform-specific guidance:
 - `/burn-disc ps1`
 - `/burn-disc saturn`
 
-## Tool
+## Tools
 
-`~/tools/burn-disc` handles the full pipeline:
+`~/bin/burn-disc` handles the full pipeline:
 archive extraction → format detection → CHD/CCD conversion → burning via cdrdao.
 
 ```
-~/tools/burn-disc '<path>' [--speed N] [--dry-run]
+~/bin/burn-disc '<path>' [--speed N] [--dry-run]
+```
+
+`~/bin/burn-from-server` searches the media server, picks a file interactively, downloads it, and burns it end-to-end. Requires Homebrew rsync (`brew install rsync`) — macOS system rsync is too old for `--protect-args`, which is needed for paths containing spaces or parentheses (common in game filenames).
+
+```
+~/bin/burn-from-server '<query>' [--speed N] [--dry-run]
 ```
 
 `--dry-run` extracts and converts without burning, then prints the generated
