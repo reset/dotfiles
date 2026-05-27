@@ -5,38 +5,97 @@ description: Manage Jamie's home media server — the *arr stack (Sonarr, Radarr
 
 # Media Server
 
-Jamie's home media server at `reset@192.168.1.28`. SSH access is available directly from this machine.
+Jamie's home media server at `reset@192.168.1.28` (hostname: `linux-build-1`). SSH access is available directly from this machine. DHCP reservation locks it to this IP permanently.
 
 ## Stack overview
 
-| Service | Type | Port | Config path |
-|---------|------|------|-------------|
-| Transmission | Native systemd service | 9091 | `/etc/transmission-daemon/settings.json` |
-| Sonarr | Docker (linuxserver/sonarr) | 8989 | `/opt/arr/sonarr/` |
-| Radarr | Docker (linuxserver/radarr) | 7878 | `/opt/arr/radarr/` |
-| Prowlarr | Docker (linuxserver/prowlarr) | 9696 | `/opt/arr/prowlarr/` |
-| Plex | Native systemd service | 32400 | `/var/lib/plexmediaserver/` |
+Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-compose.yml`. All containers use `restart: unless-stopped` — they come up automatically on boot.
+
+| Service | Image | Port | Config path | .home URL |
+|---------|-------|------|-------------|-----------|
+| Sonarr | linuxserver/sonarr | 8989 | `/opt/arr/sonarr/` | `http://sonarr.home` |
+| Radarr | linuxserver/radarr | 7878 | `/opt/arr/radarr/` | `http://radarr.home` |
+| Prowlarr | linuxserver/prowlarr | 9696 | `/opt/arr/prowlarr/` | `http://prowlarr.home` |
+| Transmission | linuxserver/transmission | 9091 | `/opt/arr/transmission/` | `http://transmission.home` |
+| Plex | linuxserver/plex | 32400 | `/var/lib/plexmediaserver/` | `http://plex.home` |
+| Pi-hole | pihole/pihole | 53 (DNS), 8080 (web) | `/opt/arr/pihole/` | `http://pihole.home` |
+| Caddy | caddy | 80 | `/opt/arr/caddy/Caddyfile` | — |
+
+**Note:** Transmission and Plex were previously native systemd services. They were migrated to Docker. The systemd services are disabled (`systemctl is-enabled` returns `disabled` for both).
+
+**Auth:** Sonarr, Radarr, and Prowlarr have authentication disabled for local addresses (`authenticationMethod: none`, `authenticationRequired: disabledForLocalAddresses`). No login required on the home network.
+
+## Managing the stack
+
+```bash
+# Status
+ssh reset@192.168.1.28 "docker ps --format 'table {{.Names}}\t{{.Status}}'"
+
+# Restart a service
+ssh reset@192.168.1.28 "cd /opt/arr && docker compose restart sonarr"
+
+# Restart everything
+ssh reset@192.168.1.28 "cd /opt/arr && docker compose restart"
+
+# View logs
+ssh reset@192.168.1.28 "docker logs sonarr --tail 50"
+
+# Reload Caddy config without restart
+ssh reset@192.168.1.28 "docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
+```
 
 ## Key paths
 
 | Path | What it is |
 |------|-----------|
+| `/opt/arr/docker-compose.yml` | Single compose file for all services |
 | `/var/lib/transmission-daemon/downloads/` | All downloads root |
 | `/var/lib/transmission-daemon/downloads/tv-shows/` | TV downloads + Sonarr library root |
 | `/var/lib/transmission-daemon/downloads/movies/` | Movie downloads + Radarr library root |
 | `/var/lib/transmission-daemon/downloads/tv-sonarr/` | Sonarr's active download category dir |
 | `/var/lib/transmission-daemon/downloads/radarr/` | Radarr's active download category dir |
+| `/var/lib/plexmediaserver/` | Plex data root (mounted as `/config` in container) |
+| `/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/` | Plex library, metadata, Preferences.xml |
 
-Note: the download directory and library root are the **same directory** for both Sonarr and Radarr. Plex is pointed at these same paths.
+The download directory and library root are the **same directory** for both Sonarr and Radarr. Plex points at these same paths.
 
 ## Container path mapping
 
-Sonarr/Radarr/Prowlarr run in Docker. Their containers see `/downloads/` for what the host has at `/var/lib/transmission-daemon/downloads/`. A remote path mapping is configured in both Sonarr and Radarr:
+Sonarr/Radarr/Prowlarr/Transmission/Plex all mount `/var/lib/transmission-daemon/downloads/` as `/downloads/` inside the container. A remote path mapping is configured in Sonarr and Radarr:
 
 - Remote (Transmission reports): `/var/lib/transmission-daemon/downloads/`
 - Local (container sees): `/downloads/`
 
 Scripts that SSH into the host must use host paths (`/var/lib/transmission-daemon/downloads/...`) for filesystem ops, but pass container paths (`/downloads/...`) to the Sonarr/Radarr APIs.
+
+## DNS and reverse proxy
+
+Pi-hole handles DNS for the whole network (Orbi is configured to use `192.168.1.28` as primary DNS, `1.1.1.1` as secondary). Local `.home` records are configured in Pi-hole's `dns.hosts` config.
+
+Caddy is the reverse proxy — all `.home` names route through it on port 80. Caddy config is at `/opt/arr/caddy/Caddyfile`.
+
+To add a new `.home` DNS record:
+```bash
+# Via Pi-hole API (Pi-hole v6)
+PW='...'  # from 1Password: Pi-hole Admin (media-server)
+TOKEN=$(curl -s -X POST http://192.168.1.28:8080/api/auth \
+  -H 'Content-Type: application/json' \
+  -d "{\"password\":\"$PW\"}" | python3 -c 'import sys,json; print(json.load(sys.stdin)["session"]["sid"])')
+
+# PATCH the full hosts array (replaces existing, so include all records)
+curl -s -X PATCH http://192.168.1.28:8080/api/config \
+  -H 'Content-Type: application/json' \
+  -H "X-FTL-SID: $TOKEN" \
+  -d '{"config":{"dns":{"hosts":["192.168.1.28 sonarr.home","192.168.1.28 radarr.home",...]}}}'
+```
+
+To add a new reverse proxy entry, append to `/opt/arr/caddy/Caddyfile`:
+```
+http://newservice.home {
+    reverse_proxy localhost:PORT
+}
+```
+Then reload: `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`
 
 ## Getting API keys
 
@@ -55,7 +114,7 @@ ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/prowlarr/config.x
 # Plex token
 ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'"
 
-# Transmission credentials (in settings.json, or just use: transmission / media-server)
+# Transmission credentials — username: reset, password in 1Password: "Media Server (*arr / Transmission)"
 ```
 
 ## Common API patterns
@@ -92,28 +151,27 @@ curl -sf -X POST http://192.168.1.28:8989/api/v3/command \
 
 ## Transmission API
 
-Transmission requires a two-step auth: first request returns a session ID header, second request uses it.
+Transmission requires a two-step auth: first request returns a session ID header, second request uses it. Credentials: username `reset`, password in 1Password ("Media Server (*arr / Transmission)").
 
 ```python
-import urllib.request, json
+import urllib.request, json, base64
 
 URL = 'http://192.168.1.28:9091/transmission/rpc'
-USER, PASS = 'transmission', 'media-server'
+AUTH = base64.b64encode(b'reset:PASSWORD').decode()
 
-handler = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-handler.add_password(None, URL, USER, PASS)
-opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(handler))
-
+req = urllib.request.Request(URL, headers={'Authorization': 'Basic ' + AUTH})
 try:
-    opener.open(URL)
+    urllib.request.urlopen(req)
 except urllib.error.HTTPError as e:
     session_id = e.headers.get('X-Transmission-Session-Id', '')
 
 def rpc(method, args=None):
     req = urllib.request.Request(URL,
         data=json.dumps({'method': method, 'arguments': args or {}}).encode(),
-        headers={'X-Transmission-Session-Id': session_id, 'Content-Type': 'application/json'})
-    with opener.open(req) as r:
+        headers={'Authorization': 'Basic ' + AUTH,
+                 'X-Transmission-Session-Id': session_id,
+                 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as r:
         return json.loads(r.read())['arguments']
 ```
 
@@ -158,11 +216,24 @@ Without a remote path mapping, Sonarr/Radarr report "directory does not exist in
 - Remote path: `/var/lib/transmission-daemon/downloads/`
 - Local path: `/downloads/`
 
+### Plex volume mount — use the parent directory
+The linuxserver/plex container sets `PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR=/config/Library/Application Support`. The volume mount must be `/var/lib/plexmediaserver:/config` (the parent), NOT the deep path `/var/lib/plexmediaserver/Library/Application Support/Plex Media Server:/config`. If the deep path is used, the container creates a fresh nested Plex setup and ignores the existing library.
+
+### Transmission config path changed from systemd
+The native systemd Transmission stored state in `/var/lib/transmission-daemon/.config/transmission-daemon/`. The Docker container uses `/opt/arr/transmission/` — all 2204 resume files and torrent state were migrated there. The downloads directory (`/var/lib/transmission-daemon/downloads/`) is the same in both cases.
+
+### Pi-hole v6 API differences
+Pi-hole v6 changed the web password env var from `WEBPASSWORD` to `FTLCONF_webserver_api_password` in docker-compose. Local DNS records are managed via the API (`dns.hosts` config array), not by editing `custom.list` directly — that file is auto-generated and will be overwritten. Pi-hole web UI moved to port 8080 to free port 80 for Caddy.
+
+### systemd-resolved conflicts with Pi-hole
+Ubuntu's `systemd-resolved` stub listener occupies port 53 on loopback by default. Required fix on the host: `DNSStubListener=no` in `/etc/systemd/resolved.conf`, then `systemctl restart systemd-resolved`. Already applied.
+
 ## Plex
 
 ```bash
 # List libraries (shows paths)
-curl -sf "http://192.168.1.28:32400/library/sections?X-Plex-Token=TOKEN" | python3 -c "
+PLEX_TOKEN=$(ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'")
+curl -sf "http://192.168.1.28:32400/library/sections?X-Plex-Token=$PLEX_TOKEN" | python3 -c "
 import sys, xml.etree.ElementTree as ET
 root = ET.parse(sys.stdin).getroot()
 for d in root.findall('Directory'):
@@ -170,7 +241,14 @@ for d in root.findall('Directory'):
 "
 
 # Trigger library scan
-curl -sf -X POST "http://192.168.1.28:32400/library/sections/SECTION_ID/refresh?X-Plex-Token=TOKEN"
+curl -sf -X POST "http://192.168.1.28:32400/library/sections/SECTION_ID/refresh?X-Plex-Token=$PLEX_TOKEN"
+
+# Set custom server URL (needed after proxy changes)
+curl -s -X PUT "http://192.168.1.28:32400/:/prefs?customConnections=http%3A%2F%2Fplex.home" \
+  -H "X-Plex-Token: $PLEX_TOKEN"
+
+# Upgrade Plex (check latest version at https://plex.tv/api/downloads/5.json)
+ssh reset@192.168.1.28 "wget -q -O /tmp/plex.deb 'https://downloads.plex.tv/plex-media-server-new/VERSION/debian/plexmediaserver_VERSION_amd64.deb' && sudo dpkg -i /tmp/plex.deb"
 ```
 
 Current libraries:
@@ -179,7 +257,7 @@ Current libraries:
 
 ## Indexer (Prowlarr → IPTorrents)
 
-Prowlarr has IPTorrents configured and synced to both Sonarr (TV categories) and Radarr (movie categories). The apps use Docker hostname `prowlarr:9696` internally. From outside Docker use `192.168.1.28:9696`.
+Prowlarr has IPTorrents configured and synced to both Sonarr (TV categories) and Radarr (movie categories). From outside Docker use `192.168.1.28:9696`.
 
 User-facing download guide is at `/opt/arr/media-guide.md` on the server.
 
