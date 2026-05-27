@@ -56,6 +56,12 @@ a raw .bin burned without cue track data will produce a broken disc.
 CCD files do NOT use `[TRACK N]` sections — they use `[Entry N]` with hex
 `Point` fields (see format reference below). The parser handles this correctly.
 
+**CCD audio byte order (white noise instead of music)** — CloneCD `.img` files
+store audio sectors in big-endian byte order. cdrdao expects little-endian.
+Burning without `--swap` produces white noise on all audio tracks while the
+game itself works fine. The tool passes `--swap` automatically for CCD sources.
+If you ever burn a CCD manually with cdrdao, always include `--swap`.
+
 **cdrdao "cannot open file" errors** — cdrdao resolves `FILE` paths in the CUE
 relative to the *invocation directory*, not the CUE file's location. The tool
 handles this by `cd`-ing into the CUE's directory before burning. If you're
@@ -84,6 +90,10 @@ Key fields per track entry:
 The `.img` file starts at PLBA 0 (track 1's INDEX 01). Audio tracks 2+
 include a standard 150-sector (2-second) pregap in the image immediately
 before their PLBA.
+
+**Audio byte order:** CloneCD stores audio sectors big-endian. cdrdao must be
+invoked with `--swap` or all audio tracks will burn as white noise. The tool
+handles this automatically.
 
 ---
 

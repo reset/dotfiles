@@ -80,6 +80,7 @@ cue_file=""
 chd_file=""
 ccd_file=""
 iso_file=""
+needs_swap=0  # set to 1 for CCD/img sources — audio is stored big-endian
 
 # --- extract archives ---
 extract_archive() {
@@ -255,6 +256,7 @@ PYEOF
         ln -sf "$img_file" "$work_dir/${img_basename}"
     fi
     cue_file="$converted_cue"
+    needs_swap=1  # CloneCD .img audio sectors are big-endian
 fi
 
 # --- dry run: print CUE and exit ---
@@ -297,7 +299,10 @@ if [[ -n "$cue_file" ]]; then
     echo ""
     # cdrdao resolves FILE paths relative to the invocation directory, not the cue
     cd "$(dirname "$cue_file")"
-    cdrdao write ${speed:+--speed "$speed"} "$(basename "$cue_file")"
+    cdrdao write \
+        ${speed:+--speed "$speed"} \
+        $([[ "$needs_swap" -eq 1 ]] && echo "--swap") \
+        "$(basename "$cue_file")"
 elif [[ -n "$iso_file" ]]; then
     check_dep cdrecord "brew install cdrtools"
     echo "Burning: $(basename "$iso_file")${speed:+ at ${speed}x}"
