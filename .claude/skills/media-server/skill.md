@@ -182,3 +182,98 @@ Current libraries:
 Prowlarr has IPTorrents configured and synced to both Sonarr (TV categories) and Radarr (movie categories). The apps use Docker hostname `prowlarr:9696` internally. From outside Docker use `192.168.1.28:9696`.
 
 User-facing download guide is at `/opt/arr/media-guide.md` on the server.
+
+## Common Operations
+
+### Add a single movie or show
+
+Look up, then add. Always read API keys live from config.xml (never hardcode).
+
+```bash
+# Movie — lookup first, grab tmdbId from result
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+curl -sf "http://192.168.1.28:7878/api/v3/movie/lookup?term=Parasite" -H "X-Api-Key: $RADARR_KEY" | python3 -c "
+import sys,json; movies=json.load(sys.stdin)
+for m in movies[:3]: print(m['tmdbId'], m['title'], m.get('year',''))
+"
+# Then add with HD-1080p quality profile (id=4) — NOT "Any" (grabs BR-DISK 60GB+ discs)
+curl -sf -X POST http://192.168.1.28:7878/api/v3/movie \
+  -H "X-Api-Key: $RADARR_KEY" -H 'Content-Type: application/json' \
+  -d '{"tmdbId":496243,"title":"Parasite","year":2019,"qualityProfileId":4,"rootFolderPath":"/downloads/movies","monitored":true,"addOptions":{"searchForMovie":true}}'
+```
+
+```bash
+# TV show — lookup first, grab tvdbId from result
+SONARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/sonarr/config.xml")
+curl -sf "http://192.168.1.28:8989/api/v3/series/lookup?term=Succession" -H "X-Api-Key: $SONARR_KEY" | python3 -c "
+import sys,json; series=json.load(sys.stdin)
+for s in series[:3]: print(s['tvdbId'], s['title'], s.get('year',''))
+"
+# Then add
+curl -sf -X POST http://192.168.1.28:8989/api/v3/series \
+  -H "X-Api-Key: $SONARR_KEY" -H 'Content-Type: application/json' \
+  -d '{"title":"Succession","tvdbId":366524,"qualityProfileId":1,"rootFolderPath":"/downloads/tv-shows","monitored":true,"addOptions":{"searchForMissingEpisodes":true,"monitor":"all"}}'
+```
+
+### Quality profiles
+
+| ID | Name | Use for |
+|----|------|---------|
+| 1 | Any | TV shows (file sizes are reasonable) |
+| 4 | HD-1080p | Movies — **always use this**, never "Any" for movies |
+
+"Any" for movies grabs BR-DISK full disc images (20–70 GB). HD-1080p caps at encoded 1080p (~2–8 GB).
+
+### Bulk-add from scene-named folders
+
+Script at `/opt/arr/bulk-add.py` on the server:
+
+```bash
+# Dry run first to see what it would add
+ssh reset@192.168.1.28 "python3 /opt/arr/bulk-add.py movies --dry-run"
+ssh reset@192.168.1.28 "python3 /opt/arr/bulk-add.py tv --dry-run"
+
+# Actually add
+ssh reset@192.168.1.28 "python3 /opt/arr/bulk-add.py movies"
+ssh reset@192.168.1.28 "python3 /opt/arr/bulk-add.py tv"
+```
+
+The script parses `Title.Year.Quality` scene names, skips anything already in the library, and uses `importMode: 'copy'` to preserve hardlinks.
+
+### Collection folders (multi-movie)
+
+When a folder like `Indiana.Jones.Collection` contains multiple movies, `bulk-add.py` will only match one. Add the rest individually using the TMDB lookup pattern above — search by each film's individual title.
+
+### Repair broken seeding
+
+Run this if Sonarr/Radarr imported files via move instead of hardlink (symptoms: Transmission shows torrents as error/missing):
+
+```bash
+# Dry run first
+ssh reset@192.168.1.28 "python3 /opt/arr/fix-seeding.py --dry-run"
+
+# Apply
+ssh reset@192.168.1.28 "python3 /opt/arr/fix-seeding.py"
+```
+
+Script reads all Transmission torrents via RPC, builds a filename→path index from `/downloads/tv-shows` and `/downloads/movies`, and hardlinks any missing torrent files back to their original paths.
+
+### Health check
+
+```bash
+SONARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/sonarr/config.xml")
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+curl -sf http://192.168.1.28:8989/api/v3/health -H "X-Api-Key: $SONARR_KEY"
+curl -sf http://192.168.1.28:7878/api/v3/health -H "X-Api-Key: $RADARR_KEY"
+```
+
+Automated monitoring runs every 4 hours via `/etc/cron.d/arr-monitor`; logs to `/var/log/arr-monitor.log`. Script at `/opt/arr/monitor.py`.
+
+### Trigger Plex library refresh
+
+```bash
+PLEX_TOKEN=$(ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'")
+# Movies = section 1, TV = section 2 (verify with /library/sections first)
+curl -sf -X POST "http://192.168.1.28:32400/library/sections/1/refresh?X-Plex-Token=$PLEX_TOKEN"
+curl -sf -X POST "http://192.168.1.28:32400/library/sections/2/refresh?X-Plex-Token=$PLEX_TOKEN"
+```
