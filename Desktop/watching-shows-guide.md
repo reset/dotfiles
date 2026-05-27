@@ -4,6 +4,8 @@ Hey Wonder! This guide walks you through how to download any TV show you want an
 
 > **One thing to know first:** You need to be on our home WiFi for this to work. It won't work from outside the house.
 
+> **⚖️ A very important legal notice:** We only use this to download shows we already own on DVD, Blu-ray, or some other format we definitely have *somewhere*. This is purely for personal backup purposes, as is our legal right. We would never dream of obtaining content we hadn't already paid for. Never ever. 😇
+
 ---
 
 ## Step 1 — Find and request your show
