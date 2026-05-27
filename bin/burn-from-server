@@ -73,8 +73,8 @@ if [[ ${#results[@]} -eq 1 ]]; then
     if [[ "$dry_run" -eq 0 ]]; then
         echo ""
         read -rp "Burn this? [Y/n] " confirm
-        confirm="${confirm:-y}"
-        [[ "${confirm,,}" == "n" ]] && { echo "Cancelled."; exit 0; }
+        confirm="$(echo "${confirm:-y}" | tr '[:upper:]' '[:lower:]')"
+        [[ "$confirm" == "n" ]] && { echo "Cancelled."; exit 0; }
     fi
 else
     for i in "${!results[@]}"; do
@@ -87,7 +87,8 @@ else
     fi
     echo ""
     read -rp "Pick one (1-${#results[@]}) or q to quit: " pick
-    [[ "${pick,,}" == "q" ]] && { echo "Cancelled."; exit 0; }
+    pick="$(echo "$pick" | tr '[:upper:]' '[:lower:]')"
+    [[ "$pick" == "q" ]] && { echo "Cancelled."; exit 0; }
     if ! [[ "$pick" =~ ^[0-9]+$ ]] || (( pick < 1 || pick > ${#results[@]} )); then
         echo >&2 "Invalid selection."
         exit 1
