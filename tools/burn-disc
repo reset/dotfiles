@@ -2,19 +2,21 @@
 set -euo pipefail
 
 # burn-disc — extract and burn a disc image to a physical CD
-# Supported inputs: .7z .zip .rar archives, .bin/.cue, .chd, .iso, .img/.cue
-# Usage: burn-disc <file> [--speed N]
+# Supported inputs: .7z .zip .rar archives, .bin/.cue, .chd, .ccd/.img, .iso
+# Usage: burn-disc <file> [--speed N] [--dry-run]
 
 usage() {
-    echo "Usage: burn-disc <file> [--speed N]" >&2
+    echo "Usage: burn-disc <file> [--speed N] [--dry-run]" >&2
     echo "" >&2
     echo "Supported formats:" >&2
     echo "  Archives:   .7z .zip .rar  (containing a disc image)" >&2
-    echo "  Images:     .bin/.cue  .chd  .iso  .img/.cue" >&2
+    echo "  Images:     .bin/.cue  .chd  .ccd/.img  .iso" >&2
     echo "" >&2
     echo "Options:" >&2
-    echo "  --speed N   Burn speed (default: drive minimum). Lower is more" >&2
-    echo "              compatible with aging retro hardware." >&2
+    echo "  --speed N    Burn speed (default: drive minimum). Lower is more" >&2
+    echo "               compatible with aging retro hardware." >&2
+    echo "  --dry-run    Extract and convert only; print the generated CUE" >&2
+    echo "               and exit without burning." >&2
     exit 1
 }
 
@@ -38,6 +40,7 @@ check_dep() {
 
 # --- argument parsing ---
 speed=""
+dry_run=0
 input_file=""
 
 while [[ $# -gt 0 ]]; do
@@ -45,6 +48,10 @@ while [[ $# -gt 0 ]]; do
         --speed)
             speed="$2"
             shift 2
+            ;;
+        --dry-run)
+            dry_run=1
+            shift
             ;;
         -h|--help)
             usage
@@ -248,6 +255,17 @@ PYEOF
         ln -sf "$img_file" "$work_dir/${img_basename}"
     fi
     cue_file="$converted_cue"
+fi
+
+# --- dry run: print CUE and exit ---
+if [[ "$dry_run" -eq 1 ]]; then
+    if [[ -n "$cue_file" ]]; then
+        echo "=== $(basename "$cue_file") ==="
+        cat "$cue_file"
+    elif [[ -n "$iso_file" ]]; then
+        echo "ISO: $(basename "$iso_file") (no CUE — single data track)"
+    fi
+    exit 0
 fi
 
 # --- burn ---

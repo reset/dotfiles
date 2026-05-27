@@ -10,11 +10,15 @@ Optionally pass a platform name for platform-specific guidance:
 ## Tool
 
 `~/tools/burn-disc` handles the full pipeline:
-archive extraction → format detection → CHD conversion → burning via cdrdao.
+archive extraction → format detection → CHD/CCD conversion → burning via cdrdao.
 
 ```
-~/tools/burn-disc '<path>' [--speed N]
+~/tools/burn-disc '<path>' [--speed N] [--dry-run]
 ```
+
+`--dry-run` extracts and converts without burning, then prints the generated
+CUE. **Always run this first on an unfamiliar image** to verify track structure
+before committing a disc.
 
 ## General workflow
 
@@ -22,10 +26,11 @@ archive extraction → format detection → CHD conversion → burning via cdrda
    the current directory and ask.
 2. Check that `cdrdao` is installed (`brew install cdrdao`). Install any other
    missing deps before re-running rather than stopping.
-3. Run the tool. It auto-detects the drive's minimum write speed and uses that
-   as the default — slower is more compatible with aging retro hardware. Only
-   override with `--speed N` if the user has a specific reason.
-4. If a drive isn't found, run `cdrdao scanbus` or `drutil list` and help the
+3. **Run `--dry-run` first.** Verify the CUE looks right — correct number of
+   tracks, correct track types (data vs audio), sensible timestamps.
+4. Run without `--dry-run` to burn. The tool auto-detects the drive's minimum
+   write speed and uses that as the default.
+5. If a drive isn't found, run `cdrdao scanbus` or `drutil list` and help the
    user identify the right device.
 
 ## Dependencies and how to install them
@@ -37,6 +42,7 @@ archive extraction → format detection → CHD conversion → burning via cdrda
 | `7z` | extract .7z | `brew install p7zip` |
 | `unrar` | extract .rar | `brew install unrar` |
 | `chdman` | convert .chd | `brew install mame` |
+| `python3` | convert .ccd | ships with macOS |
 
 ## Common issues
 
@@ -46,21 +52,56 @@ a raw .bin burned without cue track data will produce a broken disc.
 
 **CHD format** — the tool converts automatically once `chdman` is installed.
 
+**CCD format** — the tool converts automatically using the Python parser. Note:
+CCD files do NOT use `[TRACK N]` sections — they use `[Entry N]` with hex
+`Point` fields (see format reference below). The parser handles this correctly.
+
+**cdrdao "cannot open file" errors** — cdrdao resolves `FILE` paths in the CUE
+relative to the *invocation directory*, not the CUE file's location. The tool
+handles this by `cd`-ing into the CUE's directory before burning. If you're
+running cdrdao manually, do the same.
+
 **Burn failed mid-disc** — coaster. Start fresh with a new CD-R.
+
+---
+
+## CCD format reference
+
+CloneCD `.ccd` files are the control file for `.img`/`.sub` disc images.
+They use `[Entry N]` sections, not `[TRACK N]`. Track identity comes from
+the `Point` field (hex):
+
+- `0xa0` — first track number and disc type metadata
+- `0xa1` — last track number
+- `0xa2` — lead-out position
+- `0x01`–`0x63` — actual track entries (track 1–99)
+
+Key fields per track entry:
+- `Control=0x04` → data track; `Control=0x00` → audio track
+- `PLBA` → sector offset in the `.img` file where the track starts
+- The `.sub` file contains subchannel data — not needed for standard burns
+
+The `.img` file starts at PLBA 0 (track 1's INDEX 01). Audio tracks 2+
+include a standard 150-sector (2-second) pregap in the image immediately
+before their PLBA.
 
 ---
 
 ## Platform: Sega CD
 
-Format: always bin/cue (multi-track — data + audio). CHD is also common.
-A bare ISO will be missing the audio tracks and produce a broken disc.
+Format: bin/cue or CCD/img (multi-track — data + audio). CHD is also common.
+A bare ISO will be missing audio tracks and produce a broken disc.
 
 Speed: Drive minimum (auto-detected). Sega CD laser assemblies are 30+ years
-old; the slowest your drive supports is ideal. The tool defaults to this
-automatically.
+old; the slowest your drive supports is ideal.
 
 Media: CD-R only — Sega CD hardware cannot read CD-RW. Verbatim or Taiyo
 Yuden media has better compatibility than no-name discs.
+
+**After burning:** the Sega CD has internal battery-backed memory that may
+need to be formatted before it can save. If the system prompts about memory,
+go to the Options or Memory Manager screen and format it before launching
+the game.
 
 Notable games with multi-track audio: Snatcher, Sonic CD, Popful Mail,
 Shining Force CD. These will be silent or broken if burned as ISO.
