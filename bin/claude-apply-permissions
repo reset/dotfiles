@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Apply Claude Code MCP permissions to ~/.claude/settings.json.
+# Safe to run multiple times — only adds entries that aren't already present.
+# Run this on a fresh machine after setting up MCP servers.
+
+SETTINGS="$HOME/.claude/settings.json"
+
+if [[ ! -f "$SETTINGS" ]]; then
+    echo >&2 "Error: $SETTINGS not found. Open Claude Code once to create it."
+    exit 1
+fi
+
+if ! command -v jq &>/dev/null; then
+    echo >&2 "Error: jq is required. Install with: brew install jq"
+    exit 1
+fi
+
+readonly PERMISSIONS=(
+    # Atlassian (Jira + Confluence) — read-only
+    "mcp__claude_ai_Atlassian__getAccessibleAtlassianResources"
+    "mcp__claude_ai_Atlassian__getConfluencePage"
+    "mcp__claude_ai_Atlassian__lookupJiraAccountId"
+    "mcp__claude_ai_Atlassian__searchConfluenceUsingCql"
+    "mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql"
+
+    # Circleback — meetings, transcripts, action items
+    "mcp__claude_ai_Circleback__FindProfiles"
+    "mcp__claude_ai_Circleback__GetTranscriptsForMeetings"
+    "mcp__claude_ai_Circleback__SearchActionItems"
+    "mcp__claude_ai_Circleback__SearchMeetings"
+    "mcp__claude_ai_Circleback__SearchTranscripts"
+
+    # Gmail — read-only
+    "mcp__claude_ai_Gmail__get_thread"
+    "mcp__claude_ai_Gmail__list_labels"
+    "mcp__claude_ai_Gmail__search_threads"
+
+    # Google Calendar — read-only
+    "mcp__claude_ai_Google_Calendar__list_calendars"
+    "mcp__claude_ai_Google_Calendar__list_events"
+
+    # Slack — read-only
+    "mcp__claude_ai_Slack__slack_read_user_profile"
+    "mcp__claude_ai_Slack__slack_search_public_and_private"
+    "mcp__claude_ai_Slack__slack_search_users"
+)
+
+# Build jq args: add each permission only if not already present
+jq_filter='. as $s |
+  reduce $perms[] as $p (
+    $s;
+    if (.permissions.allow // [] | index($p)) != null then . else
+      .permissions.allow += [$p]
+    end
+  )'
+
+# Pass the array as a jq variable
+perms_json="$(printf '%s\n' "${PERMISSIONS[@]}" | jq -R . | jq -s .)"
+
+updated="$(jq --argjson perms "$perms_json" "$jq_filter" "$SETTINGS")"
+echo "$updated" > "$SETTINGS"
+
+echo "Done. Permissions applied to $SETTINGS"
