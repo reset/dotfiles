@@ -35,6 +35,7 @@ brew "telnet"
 brew "terraform"
 brew "tmux"
 brew "transmission-cli"
+brew "weechat"
 brew "zsh"
 brew "jaxxstorm/tap/aws-sso-creds"
 
