@@ -3,6 +3,7 @@ tap "jaxxstorm/tap"
 # CLI tools
 brew "awscli"
 brew "azure-cli"
+brew "bash"
 brew "binutils"
 brew "cdrdao"
 brew "cloc"
