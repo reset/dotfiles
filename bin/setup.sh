@@ -40,6 +40,7 @@ function install_packages () {
   fi
 }
 
+
 function install_symlinks () {
   echo "Linking system software..."
   sudo mkdir -p /usr/local/bin
@@ -101,87 +102,7 @@ function _configure_system_macos () {
 function _install_packages_macos () {
   echo "Installing macOS system packages..."
   softwareupdate --install-rosetta
-
-  echo "Installing Brew packages..."
-  brew tap jaxxstorm/tap
-
-  brew install \
-    awscli \
-    aws-sso-creds \
-    azure-cli \
-    binutils \
-    brave-browser \
-    cdrdao \
-    cloc \
-    claude \
-    claude-code \
-    consul \
-    coreutils \
-    deckset \
-    direnv \
-    ffmpeg \
-    fzf \
-    gcc \
-    gh \
-    gimp \
-    git \
-    git-lfs \
-    go \
-    gpg2 \
-    gnupg \
-    jq \
-    mas \
-    maven \
-    obs \
-    p4 \
-    p4v \
-    p7zip \
-    pinentry-mac \
-    pkgconfig \
-    python \
-    rar \
-    reattach-to-user-namespace \
-    ruby \
-    rust \
-    shfmt \
-    telegram \
-    telnet \
-    terraform \
-    tmux \
-    transmission-cli \
-    vlc \
-    whatsapp \
-    zsh
-
-  echo "Installing Brew Cask packages..."
-  brew install --cask 1password
-  brew install --cask 1password-cli
-  brew install --cask alacritty
-  brew install --cask alfred
-  brew install --cask discord
-  brew install --cask docker
-  brew install --cask dotnet-sdk
-  brew install --cask font-fira-code
-  brew install --cask go-agent
-  brew install --cask google-chrome
-  brew install --cask google-drive
-  brew install --cask keybase
-  brew install --cask dropbox
-  brew install --cask nordvpn
-  brew install --cask notable
-  brew install --cask postman
-  brew install --cask slack
-  brew install --cask steam
-  brew install --cask unity-hub
-  brew install --cask visual-studio-code
-  brew install --cask zoom
-
-  echo "Installing Mac App Store packages..."
-  mas install 1295203466 # Windows RDP
-  mas install 441258766 # Magnet
-  mas install 462058435 # Microsoft Excel
-  mas install 1545870783 # System Color Picker
-  mas install 1569813296 # 1Password for Safari
+  brew bundle install --file="$HOME/Brewfile"
 }
 
 function _caps_lock_remap_macos () {
