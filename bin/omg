@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+readonly PROJ="$HOME/code/OmgCli/tools/OmgCli/OmgCli.csproj"
+exec dotnet run --project "$PROJ" -- "$@"
