@@ -6,11 +6,11 @@ export GOPATH=$HOME/go
 export GH_EDITOR="code --wait"
 export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
 
+fpath=(~/.zsh ~/.zsh/completions $fpath)
+
 plugins=(git z tmux ssh-agent)
 zstyle :omz:plugins:ssh-agent agent-forwarding on
 source $ZSH/oh-my-zsh.sh
-
-fpath=(~/.zsh ~/.zsh/completions $fpath)
 
 # Base16 Shell
 BASE16_SHELL="$HOME/.config/base16-shell/"
