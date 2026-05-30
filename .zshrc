@@ -10,7 +10,7 @@ plugins=(git z tmux ssh-agent)
 zstyle :omz:plugins:ssh-agent agent-forwarding on
 source $ZSH/oh-my-zsh.sh
 
-fpath=(~/.zsh $fpath)
+fpath=(~/.zsh ~/.zsh/completions $fpath)
 
 # Base16 Shell
 BASE16_SHELL="$HOME/.config/base16-shell/"
