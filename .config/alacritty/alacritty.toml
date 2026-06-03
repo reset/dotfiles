@@ -672,4 +672,12 @@ lines = 0
 x = 0
 y = 0
 
+[[hints.enabled]]
+command = "open"
+hyperlinks = true
+post_processing = true
+persist = false
+mouse = { enabled = true, mods = "Command" }
+regex = '(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file:|git://|ssh:|ftp://)[^\s<>\"]+'
+
 [keyboard]
