@@ -4,7 +4,10 @@ set -euo pipefail
 # Rename the current tmux window to reflect Claude Code state.
 # Called from ~/.claude/settings.json hooks. No-op outside tmux.
 #
-# Usage: hook-tmux.sh <stop|wait>
+# Usage: hook-tmux.sh <work|wait|stop>
+#   work  — Claude is actively using tools (PreToolUse)
+#   wait  — Claude needs attention / waiting for input (Notification)
+#   stop  — Claude session ended (Stop)
 
 # No-op if not inside tmux
 if [ -z "${TMUX_PANE:-}" ]; then
@@ -23,14 +26,17 @@ else
 fi
 
 case "$action" in
+  work)
+    tmux rename-window -t "$TMUX_PANE" "⚙ $project"
+    ;;
+  wait)
+    tmux rename-window -t "$TMUX_PANE" "● $project"
+    ;;
   stop)
     tmux rename-window -t "$TMUX_PANE" "✓ $project"
     ;;
-  wait)
-    tmux rename-window -t "$TMUX_PANE" "⌛ $project"
-    ;;
   *)
-    echo >&2 "hook-tmux.sh: unknown action '$action' (expected stop|wait)"
+    echo >&2 "hook-tmux.sh: unknown action '$action' (expected work|wait|stop)"
     ;;
 esac
 
