@@ -129,3 +129,28 @@ Configuration is layered — each layer has a job:
 - When you need a hook or setting to follow you across machines, **document the snippet in `~/.claude/CLAUDE.md`** instead of tracking the live file. The instructions are tracked; the live state stays per-machine.
 - When in doubt, don't track. Adding a file later is easy; redacting after a leak is not.
 
+## Claude Code Settings
+
+`~/.claude/settings.json` is not tracked (see Dotfiles above). Reconstruct these on a fresh machine:
+
+### tmux window-name hooks
+
+Requires `~/.claude/hook-tmux.sh` (tracked). Add to `settings.json` under `"hooks"`:
+
+```json
+"PreToolUse": [
+  { "matcher": "", "hooks": [{ "type": "command", "command": "bash ~/.claude/hook-tmux.sh work" }] }
+],
+"Notification": [
+  { "matcher": "", "hooks": [
+    { "type": "command", "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'" },
+    { "type": "command", "command": "bash ~/.claude/hook-tmux.sh wait" }
+  ]}
+],
+"Stop": [
+  { "matcher": "", "hooks": [{ "type": "command", "command": "bash ~/.claude/hook-tmux.sh stop" }] }
+]
+```
+
+Window states: `⚙ project` = working (PreToolUse), `● project` = waiting for input (Notification), `✓ project` = session ended (Stop).
+
