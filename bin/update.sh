@@ -6,6 +6,9 @@ function upgrade_homebrew () {
   echo "Updating Homebrew packages..."
   brew update && brew upgrade
 
+  echo "Installing new Brewfile entries..."
+  brew bundle install --file="$HOME/Brewfile"
+
   echo "Cleaning up Homebrew packages..."
   brew cleanup -s
   rm -rf "$(brew --cache)"
