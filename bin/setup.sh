@@ -102,6 +102,7 @@ function _configure_system_macos () {
 function _install_packages_macos () {
   echo "Installing macOS system packages..."
   softwareupdate --install-rosetta
+  brew trust jaxxstorm/tap
   brew bundle install --file="$HOME/Brewfile"
 }
 
