@@ -355,3 +355,158 @@ PLEX_TOKEN=$(ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' 
 curl -sf -X POST "http://192.168.1.28:32400/library/sections/1/refresh?X-Plex-Token=$PLEX_TOKEN"
 curl -sf -X POST "http://192.168.1.28:32400/library/sections/2/refresh?X-Plex-Token=$PLEX_TOKEN"
 ```
+
+## Disk Management
+
+### Understanding the directory layout
+
+Every downloaded file exists in two folders — this is by design, not waste:
+
+1. **Scene/torrent folder** (`movies/Scene.Name.Year.1080p.x264-GROUP/`) — original download path; Transmission seeds from here.
+2. **Clean folder** (`movies/Title (Year)/`) — what Radarr/Sonarr created via hardlink for Plex.
+
+Both folder entries point to the **same inode** (confirmed: `nlink=2`). Deleting the scene folder frees zero bytes — it just breaks seeding. Don't delete scene folders to save space.
+
+### What actually uses unique disk space
+
+- **`/downloads/radarr/`** — Radarr's download category staging dir. Files here are either in-progress or downloaded but not yet imported. In the combined `du -sh /downloads/*` output, files already hardlinked to `movies/` show as 0 here (inodes counted in movies first); files NOT yet imported show their full size here.
+- **`/downloads/tv-sonarr/`** — same pattern for TV.
+- **Quality profile misfires** — the biggest risk. A UHD Blu-ray Remux can be 50–80G vs 3–8G for an equivalent 1080p encode.
+
+### Checking disk usage
+
+```bash
+# Overall
+ssh reset@192.168.1.28 "df -h /"
+
+# By top-level download subdirs (hardlinks counted once, movies before radarr)
+ssh reset@192.168.1.28 "du -sh /var/lib/transmission-daemon/downloads/*"
+
+# Largest movie folders
+ssh reset@192.168.1.28 "du -sh /var/lib/transmission-daemon/downloads/movies/* | sort -rh | head -20"
+
+# Largest TV folders
+ssh reset@192.168.1.28 "du -sh /var/lib/transmission-daemon/downloads/tv-shows/* | sort -rh | head -20"
+```
+
+### Quality profiles
+
+**Radarr (movies):**
+
+| ID | Name | Allowed | Notes |
+|----|------|---------|-------|
+| 4 | HD-1080p | HDTV-1080p, WEB 1080p | Default. Bluray-1080p intentionally removed (runs 6–15G). |
+| 5 | Ultra-HD | HDTV-2160p, WEB 2160p, Bluray-2160p | Remux-2160p and BR-DISK intentionally removed (50–80G). |
+
+**Sonarr (TV):**
+
+| ID | Name | Notes |
+|----|------|-------|
+| 1 | Any | Most shows — includes everything up to Bluray-1080p |
+| 4 | HD-1080p | Same as Radarr HD-1080p |
+| 5 | Ultra-HD | Same as Radarr Ultra-HD — check for accidental use |
+| 6 | HD-720p/1080p | A few shows (The Bridge, Workaholics, Ren & Stimpy, Devotion) |
+
+**Never leave a movie on Ultra-HD (profile 5) accidentally.** Check which movies are on Ultra-HD:
+
+```bash
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+ssh reset@192.168.1.28 "curl -sf 'http://192.168.1.28:7878/api/v3/movie?apikey=$RADARR_KEY' | python3 -c \"
+import sys, json
+for m in json.load(sys.stdin):
+    if m['qualityProfileId'] == 5:
+        f = m.get('movieFile')
+        size = str(f['size']//1024//1024//1024)+'G' if f else 'no file'
+        print(m['title'], m['year'], size)
+\""
+```
+
+### Auditing oversized files
+
+**Movies with Bluray-1080p files** (these were grabbed before Bluray-1080p was removed from the profile):
+
+```bash
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+ssh reset@192.168.1.28 "curl -sf 'http://192.168.1.28:7878/api/v3/movie?apikey=$RADARR_KEY' | python3 -c \"
+import sys, json
+movies = [m for m in json.load(sys.stdin) if m.get('movieFile') and m['movieFile']['quality']['quality']['name'] == 'Bluray-1080p']
+for m in sorted(movies, key=lambda x: -x['movieFile']['size']):
+    f = m['movieFile']
+    print(str(f['size']//1024//1024//1024) + 'G', m['id'], f['id'], m['title'])
+\""
+```
+
+**Re-grab a movie at the new quality** (delete file record → Radarr auto-searches):
+
+```bash
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+MOVIE_ID=11   # from audit above
+FILE_ID=67    # from audit above
+
+# Delete file from Radarr (removes clean folder copy; scene/torrent folder keeps seeding)
+ssh reset@192.168.1.28 "curl -sf -X DELETE 'http://192.168.1.28:7878/api/v3/moviefile/$FILE_ID?apikey=$RADARR_KEY'"
+
+# Trigger search
+ssh reset@192.168.1.28 "curl -sf -X POST 'http://192.168.1.28:7878/api/v3/command?apikey=$RADARR_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{\"name\":\"MoviesSearch\",\"movieIds\":[$MOVIE_ID]}'"
+```
+
+**TV episodes over 2GB** (legitimate for long episodes, but worth checking):
+
+```bash
+SONARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/sonarr/config.xml")
+ssh reset@192.168.1.28 "python3 -c \"
+import json, urllib.request
+KEY = '$SONARR_KEY'
+BASE = 'http://192.168.1.28:8989/api/v3'
+with urllib.request.urlopen(BASE + '/series?apikey=' + KEY) as r:
+    series_list = json.loads(r.read())
+big = []
+for s in series_list:
+    with urllib.request.urlopen(BASE + '/episodefile?seriesId=' + str(s['id']) + '&apikey=' + KEY) as r:
+        for f in json.loads(r.read()):
+            if f['size'] > 2*1024*1024*1024:
+                big.append((f['size'], s['title'], f['relativePath'].split('/')[-1], f['quality']['quality']['name']))
+for size, series, fname, quality in sorted(big, reverse=True)[:20]:
+    print(str(size//1024//1024//1024) + 'G [' + quality + '] ' + series + ' / ' + fname)
+\""
+```
+
+### Docker cleanup
+
+Unused images and orphaned volumes accumulate over time. Safe to prune anytime:
+
+```bash
+ssh reset@192.168.1.28 "docker image prune -f && docker volume prune -f"
+```
+
+Typically recovers 5–15G. Check first with `docker system df`.
+
+### Fixing "Unable to save resume file: No space left on device"
+
+After freeing space, Transmission torrents in error state need a **stop then start** — a plain `torrent-start` on an already-errored torrent doesn't clear the error:
+
+```python
+import urllib.request, json, time
+
+URL = 'http://192.168.1.28:9091/transmission/rpc'
+req = urllib.request.Request(URL, data=b'{}', headers={'Content-Type': 'application/json'})
+try: urllib.request.urlopen(req)
+except urllib.error.HTTPError as e: sid = e.headers.get('X-Transmission-Session-Id', '')
+
+def rpc(method, args=None):
+    req = urllib.request.Request(URL,
+        data=json.dumps({'method': method, 'arguments': args or {}}).encode(),
+        headers={'X-Transmission-Session-Id': sid, 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+result = rpc('torrent-get', {'fields': ['id', 'error']})
+errored_ids = [t['id'] for t in result['arguments']['torrents'] if t['error'] != 0]
+rpc('torrent-stop', {'ids': errored_ids})
+time.sleep(2)
+rpc('torrent-start', {'ids': errored_ids})
+```
+
+Note: Transmission RPC has `rpc-authentication-required: false` — no credentials needed.
