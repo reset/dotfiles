@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly PID_FILE="/tmp/.caffeine-${USER}.pid"
+
+is_running() {
+    [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+}
+
+cmd_on() {
+    if is_running; then
+        echo "already on (pid $(cat "$PID_FILE"))"
+        return
+    fi
+    caffeinate -s &
+    local pid=$!
+    echo "$pid" > "$PID_FILE"
+    echo "on (pid $pid)"
+}
+
+cmd_off() {
+    if ! is_running; then
+        rm -f "$PID_FILE"
+        echo "already off"
+        return
+    fi
+    kill "$(cat "$PID_FILE")"
+    rm -f "$PID_FILE"
+    echo "off"
+}
+
+cmd_status() {
+    if is_running; then
+        echo "on (pid $(cat "$PID_FILE"))"
+    else
+        rm -f "$PID_FILE"
+        echo "off"
+    fi
+}
+
+cmd="${1:-toggle}"
+case "$(echo "$cmd" | tr '[:upper:]' '[:lower:]')" in
+    on)     cmd_on ;;
+    off)    cmd_off ;;
+    status) cmd_status ;;
+    toggle)
+        if is_running; then cmd_off; else cmd_on; fi
+        ;;
+    *)
+        echo >&2 "usage: caffeine [on|off|status|toggle]"
+        exit 1
+        ;;
+esac
