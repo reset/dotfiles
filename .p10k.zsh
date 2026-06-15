@@ -97,7 +97,7 @@
     # ip                    # ip address and bandwidth usage for a specified network interface
     # public_ip             # public IP address
     # proxy                 # system-wide http/https/ftp proxy
-    battery                # internal battery
+    # battery               # internal battery
     # wifi                  # wifi speed
     # example               # example user-defined segment (see prompt_example function below)
   )
@@ -1559,8 +1559,8 @@
   typeset -g POWERLEVEL9K_BATTERY_DISCONNECTED_FOREGROUND=3
   # Battery pictograms going from low to high level of charge.
   typeset -g POWERLEVEL9K_BATTERY_STAGES=('%K{232}▁' '%K{232}▂' '%K{232}▃' '%K{232}▄' '%K{232}▅' '%K{232}▆' '%K{232}▇' '%K{232}█')
-  # Show the remaining time to charge/discharge.
-  typeset -g POWERLEVEL9K_BATTERY_VERBOSE=true
+  # Don't show the remaining time to charge/discharge.
+  typeset -g POWERLEVEL9K_BATTERY_VERBOSE=false
   # typeset -g POWERLEVEL9K_BATTERY_BACKGROUND=0
 
   #####################################[ wifi: wifi speed ]#####################################

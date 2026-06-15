@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+pmset -g batt | awk -F';' '/[0-9]+%/ {
+  match($3, /[0-9]+:[0-9]+/)
+  if (RSTART > 0) {
+    t = substr($3, RSTART, RLENGTH)
+    if (t != "0:00") print t
+  }
+}'
