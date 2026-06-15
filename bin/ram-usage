@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-vm_stat | awk '
+icon=$'\xf3\xb0\x94\x8b'  # U+F050B nf-md-memory
+vm_stat | awk -v icon="$icon" '
 /Pages free:/              { free  = $3 }
 /Pages active:/            { active = $3 }
 /Pages inactive:/          { inactive = $3 }
@@ -10,5 +11,5 @@ vm_stat | awk '
 END {
   used  = active + wired + comp
   total = free + active + inactive + wired + comp
-  printf "󰍛 %.0f%%\n", (used / total) * 100
+  printf "%s %.0f%%\n", icon, (used / total) * 100
 }'

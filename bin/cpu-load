@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sysctl -n vm.loadavg | awk '{printf " %.2f\n", $2}'
+icon=$'\xef\x8b\x9b'  # U+F2DB nf-fa-microchip
+sysctl -n vm.loadavg | awk -v icon="$icon" '{printf "%s %.2f\n", icon, $2}'
