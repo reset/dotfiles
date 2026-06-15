@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+iface=$(route get default 2>/dev/null | awk '/interface:/ {print $2}')
+[[ -z "$iface" ]] && exit 0
+
+read -r rx tx < <(netstat -ib | awk -v i="$iface" '$1==i && /Link/ {print $7, $10; exit}')
+[[ -z "$rx" ]] && exit 0
+
+state="/tmp/tmux-net-$iface"
+now=$(date +%s)
+
+fmt() {
+  local n=$1
+  if   (( n >= 1048576 )); then awk "BEGIN {printf \"%.1fM\", $n/1048576}"
+  elif (( n >= 1024 ));    then awk "BEGIN {printf \"%.0fK\", $n/1024}"
+  else                          printf '%dB' "$n"
+  fi
+}
+
+if [[ -f "$state" ]]; then
+  read -r pt prx ptx < "$state"
+  elapsed=$(( now - pt ))
+  if (( elapsed > 0 && rx >= prx && tx >= ptx )); then
+    down=$(fmt $(( (rx - prx) / elapsed )))
+    up=$(fmt   $(( (tx - ptx) / elapsed )))
+    printf '\xe2\x86\x93%s \xe2\x86\x91%s' "$down" "$up"
+  fi
+fi
+
+printf '%s %s %s\n' "$now" "$rx" "$tx" > "$state"
