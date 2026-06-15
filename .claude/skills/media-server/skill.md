@@ -20,6 +20,9 @@ Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-
 | Plex | linuxserver/plex | 32400 | `/var/lib/plexmediaserver/` | `http://plex.home` |
 | Pi-hole | pihole/pihole | 53 (DNS), 8080 (web) | `/opt/arr/pihole/` | `http://pihole.home` |
 | Caddy | caddy | 80 | `/opt/arr/caddy/Caddyfile` | — |
+| unpackerr | golift/unpackerr | — | `/opt/arr/unpackerr/` | — |
+| Seerr | — | — | — | `http://seerr.home` |
+| Tautulli | — | — | — | `http://tautulli.home` |
 
 **Note:** Transmission and Plex were previously native systemd services. They were migrated to Docker. The systemd services are disabled (`systemctl is-enabled` returns `disabled` for both).
 
@@ -372,6 +375,76 @@ Both folder entries point to the **same inode** (confirmed: `nlink=2`). Deleting
 - **`/downloads/radarr/`** — Radarr's download category staging dir. Files here are either in-progress or downloaded but not yet imported. In the combined `du -sh /downloads/*` output, files already hardlinked to `movies/` show as 0 here (inodes counted in movies first); files NOT yet imported show their full size here.
 - **`/downloads/tv-sonarr/`** — same pattern for TV.
 - **Quality profile misfires** — the biggest risk. A UHD Blu-ray Remux can be 50–80G vs 3–8G for an equivalent 1080p encode.
+- **unpackerr RAR extraction** — unpackerr auto-extracts RAR-packed releases into the staging dir. The extracted file is owned by root, and the original RAR parts are owned by debian-transmission. Until Radarr/Sonarr imports and Transmission removes the torrent, both the RAR parts AND the extracted file occupy disk. A 55G BR-DISK release becomes ~110G of staged files. Profile changes don't retroactively reject already-grabbed content — the grab and the profile change are decoupled.
+
+### Cleaning radarr/tv-sonarr staging
+
+Staging dirs accumulate imported-but-not-yet-cleared torrents. Safe to clean up anything already imported (Radarr/Sonarr has the file). The hardlinked copy in `movies/` or `tv-shows/` survives Transmission deletion.
+
+**Note: Radarr/Sonarr API returns 500 when disk is full.** If you get empty or 500 responses, check `df -h /` first.
+
+**Note: `torrent-remove --delete-local-data` can't delete root-owned files** (unpackerr extracts as root). If staging files survive after Transmission removal, use `sudo rm -rf` on the specific folder.
+
+```python
+# Run via: ssh reset@192.168.1.28 'python3 << PYEOF ... PYEOF'
+import urllib.request, json, re, os
+
+key = open("/opt/arr/radarr/config.xml").read()
+api_key = re.search(r"<ApiKey>([^<]+)", key).group(1)
+base = "http://192.168.1.28:7878/api/v3"
+
+with urllib.request.urlopen(base + "/movie?apikey=" + api_key) as r:
+    movies = json.loads(r.read())
+
+imported = {}
+for m in movies:
+    if m.get("movieFile"):
+        imported[m["id"]] = {
+            "title": m["title"], "year": m["year"],
+            "file_path": m["movieFile"]["path"],
+        }
+
+URL = "http://192.168.1.28:9091/transmission/rpc"
+req = urllib.request.Request(URL, data=b"{}", headers={"Content-Type": "application/json"})
+try: urllib.request.urlopen(req); sid = ""
+except urllib.error.HTTPError as e: sid = e.headers.get("X-Transmission-Session-Id", "")
+
+def rpc(method, args=None):
+    req = urllib.request.Request(URL,
+        data=json.dumps({"method": method, "arguments": args or {}}).encode(),
+        headers={"X-Transmission-Session-Id": sid, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())["arguments"]
+
+result = rpc("torrent-get", {"fields": ["id", "name", "downloadDir", "totalSize", "percentDone"]})
+radarr_torrents = [t for t in result["torrents"] if "radarr" in t["downloadDir"] and t["percentDone"] == 1.0]
+
+can_remove = []
+for t in sorted(radarr_torrents, key=lambda x: -x["totalSize"]):
+    torrent_lower = t["name"].lower().replace(".", " ").replace("-", " ")
+    matched = None
+    for mid, info in imported.items():
+        if info["title"].lower() in torrent_lower and str(info["year"]) in t["name"]:
+            matched = info; break
+    size_g = t["totalSize"] / 1024/1024/1024
+    if matched:
+        host_path = matched["file_path"].replace("/downloads/", "/var/lib/transmission-daemon/downloads/")
+        file_exists = os.path.exists(host_path)
+        can_remove.append(t["id"])
+        print("IMPORTED %.1fG %s -> %s file_exists=%s" % (size_g, t["name"], matched["title"], file_exists))
+    else:
+        print("NO-MATCH %.1fG %s" % (size_g, t["name"]))
+
+# Verify the list looks right before uncommenting:
+# rpc("torrent-remove", {"ids": can_remove, "delete-local-data": True})
+# For NO-MATCH items, look them up manually in Radarr — title/year mismatches are common
+# (e.g. "2019" in torrent name but Radarr has year 2020, or subtitle differences)
+```
+
+After torrent removal, if files remain (root-owned by unpackerr):
+```bash
+ssh reset@192.168.1.28 "sudo rm -rf '/var/lib/transmission-daemon/downloads/radarr/FOLDER-NAME'"
+```
 
 ### Checking disk usage
 
