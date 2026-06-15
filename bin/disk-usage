@@ -2,4 +2,4 @@
 set -euo pipefail
 
 icon=$'\xef\x82\xa0'  # U+F0A0 nf-fa-hdd
-df -H / | awk -v icon="$icon" 'NR==2 {printf "%s %s\n", icon, $5}'
+df -k / | awk -v icon="$icon" 'NR==2 {printf "%s %.0f%%\n", icon, ($2-$4)/$2*100}'
