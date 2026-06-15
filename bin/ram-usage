@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+vm_stat | awk '
+/Pages free:/              { free  = $3 }
+/Pages active:/            { active = $3 }
+/Pages inactive:/          { inactive = $3 }
+/Pages wired down:/        { wired = $4 }
+/Pages occupied by compressor:/ { comp = $5 }
+END {
+  used  = active + wired + comp
+  total = free + active + inactive + wired + comp
+  printf "%.0f%% RAM\n", (used / total) * 100
+}'

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+name=$(scutil --nc list 2>/dev/null | awk -F'"' '/\(Connected\)/ {print $2; exit}')
+if [[ -n "$name" ]]; then
+  printf 'VPN: %s' "$name"
+fi
