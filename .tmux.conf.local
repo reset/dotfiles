@@ -8,6 +8,9 @@ set -as terminal-features 'xterm*:extkeys'
 
 set-option -g default-shell /usr/local/bin/zsh
 
+bind-key -r S-Left  swap-window -t -1 \; select-window -t -1
+bind-key -r S-Right swap-window -t +1 \; select-window -t +1
+
 bind-key -T copy-mode-vi v send -X begin-selection
 bind-key -T copy-mode-vi y send-keys -X copy-pipe-and-cancel "pbcopy"
 bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "pbcopy"
