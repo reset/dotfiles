@@ -10,5 +10,5 @@ vm_stat | awk '
 END {
   used  = active + wired + comp
   total = free + active + inactive + wired + comp
-  printf "%.0f%% RAM\n", (used / total) * 100
+  printf "󰍛 %.0f%%\n", (used / total) * 100
 }'

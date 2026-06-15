@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sysctl -n vm.loadavg | awk '{printf "%.2f load\n", $2}'
+sysctl -n vm.loadavg | awk '{printf " %.2f\n", $2}'

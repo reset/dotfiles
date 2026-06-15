@@ -3,12 +3,12 @@ set -euo pipefail
 
 # NordLynx (WireGuard) assigns client IPs from 10.5.0.0/16 — exclusive to NordVPN
 if ifconfig 2>/dev/null | grep -q "inet 10\.5\."; then
-  printf 'NordVPN'
+  printf ' NordVPN'
   exit 0
 fi
 
 # Fallback for traditional VPNs (IKEv2, L2TP, Cisco)
 name=$(scutil --nc list 2>/dev/null | awk -F'"' '/\(Connected\)/ {print $2; exit}')
 if [[ -n "$name" ]]; then
-  printf 'VPN: %s' "$name"
+  printf ' %s' "$name"
 fi
