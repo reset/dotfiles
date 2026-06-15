@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-icon=$'\xf3\xb0\x94\x8b'  # U+F050B nf-md-memory
+icon=$'\xef\x94\xb8'  # U+F538 nf-fa-memory
 vm_stat | awk -v icon="$icon" '
 /Pages free:/              { free  = $3 }
 /Pages active:/            { active = $3 }
