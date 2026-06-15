@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+icon=$'\xef\x82\xa0'  # U+F0A0 nf-fa-hdd
+df -H / | awk -v icon="$icon" 'NR==2 {printf "%s %s\n", icon, $5}'
