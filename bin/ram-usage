@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-icon=$'\xef\x94\xb8'  # U+F538 nf-fa-memory
+icon=$'\xef\x83\xa4'  # U+F0E4 nf-fa-tachometer (p10k RAM icon in compatible mode)
 vm_stat | awk -v icon="$icon" '
 /Pages free:/              { free  = $3 }
 /Pages active:/            { active = $3 }
