@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+info=$(pmset -g batt | awk -F'[\t;]' '/[0-9]+%/ {
+  gsub(/ /, "", $2); gsub(/%/, "", $2)
+  status = $3; gsub(/^ +/, "", status)
+  print int($2) " " status
+  exit
+}')
+
+[[ -z "$info" ]] && exit 0
+
+pct=${info%% *}
+status=${info#* }
+
+if [[ "$status" == "charging" ]]; then
+  color="colour2"
+elif (( pct > 50 )); then
+  color="colour2"
+elif (( pct > 20 )); then
+  color="colour3"
+else
+  color="colour1"
+fi
+
+printf '#[fg=%s]●#[default]' "$color"
