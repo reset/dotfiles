@@ -12,8 +12,13 @@ cmd_on() {
         echo "already on (pid $(cat "$PID_FILE"))"
         return
     fi
-    caffeinate -s &
+    # -i: prevent idle sleep (the idle timer fires even on AC power without this)
+    # -s: prevent system sleep on AC power
+    # -d: prevent display sleep (keeps assertions visible in `pmset -g assertions`)
+    # -m: prevent disk idle sleep
+    caffeinate -i -s -d -m &
     local pid=$!
+    disown "$pid"
     echo "$pid" > "$PID_FILE"
     echo "on (pid $pid)"
 }
