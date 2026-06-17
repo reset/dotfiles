@@ -13,14 +13,18 @@ info=$(pmset -g batt | awk -F'[\t;]' '/[0-9]+%/ {
 pct=${info%% *}
 status=${info#* }
 
-if [[ "$status" == "charging" ]]; then
-  color="colour2"
-elif (( pct > 50 )); then
-  color="colour2"
-elif (( pct > 20 )); then
-  color="colour3"
+if [[ "$status" == "discharging" ]]; then
+  glyph="▼"
+  if (( pct > 50 )); then
+    color="colour2"
+  elif (( pct > 20 )); then
+    color="colour3"
+  else
+    color="colour1"
+  fi
 else
-  color="colour1"
+  glyph="▲"
+  color="colour2"
 fi
 
-printf '#[fg=%s]●#[default]' "$color"
+printf '#[fg=%s]%s#[default]' "$color" "$glyph"
