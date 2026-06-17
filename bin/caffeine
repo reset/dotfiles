@@ -2,57 +2,112 @@
 set -euo pipefail
 
 readonly PID_FILE="/tmp/.caffeine-${USER}.pid"
+readonly LID_MARKER="/tmp/.caffeine-lid-${USER}"
 
 is_running() {
-    [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+    [[ -f "$PID_FILE" ]] || return 1
+    local pid; pid="$(cat "$PID_FILE")"
+    [[ "$(ps -p "$pid" -o comm= 2>/dev/null)" == *caffeinate* ]]
+}
+
+# True when the system-wide disablesleep setting is on. Read from live pmset
+# state so `status` reflects reality even after a hard kill that skipped our
+# teardown. pmset -g prints no SleepDisabled line at all when it's 0.
+lid_sleep_disabled() {
+    [[ "$(pmset -g | awk '/SleepDisabled/ {print $NF}')" == "1" ]]
 }
 
 cmd_on() {
+    local want_lid="$1"
+
     if is_running; then
         echo "already on (pid $(cat "$PID_FILE"))"
-        return
+    else
+        # -i: prevent idle sleep (the idle timer fires even on AC power without this)
+        # -s: prevent system sleep on AC power (no-op on battery)
+        # Neither -i nor -s stops sleep triggered by closing the lid — that's a
+        # separate mechanism. Use `caffeine on --lid` for unattended lid-closed
+        # operation (e.g. the Colima client fleet). Display/disk sleep are left
+        # alone — they don't affect keeping the system (or a Colima VM) awake.
+        caffeinate -i -s &
+        local pid=$!
+        disown "$pid"
+        echo "$pid" > "$PID_FILE"
+        echo "on (pid $pid)"
     fi
-    # -i: prevent idle sleep (the idle timer fires even on AC power without this)
-    # -s: prevent system sleep on AC power
-    # -d: prevent display sleep (keeps assertions visible in `pmset -g assertions`)
-    # -m: prevent disk idle sleep
-    caffeinate -i -s -d -m &
-    local pid=$!
-    disown "$pid"
-    echo "$pid" > "$PID_FILE"
-    echo "on (pid $pid)"
+
+    if [[ "$want_lid" == "yes" ]]; then
+        # disablesleep is a global system setting, NOT a caffeinate assertion: it
+        # survives crashes and reboots and reverts only when set back to 0. We drop
+        # a marker so `caffeine off` undoes only what we enabled, never a
+        # disablesleep someone else set. -a covers all power sources — an
+        # unattended fleet runs on AC, where the battery-only selector is a no-op.
+        sudo pmset -a disablesleep 1
+        : > "$LID_MARKER"
+        echo "lid-close sleep: disabled (run 'caffeine off' to restore)"
+    fi
 }
 
 cmd_off() {
-    if ! is_running; then
+    if is_running; then
+        kill "$(cat "$PID_FILE")" 2>/dev/null || true
+        rm -f "$PID_FILE"
+        echo "off"
+    else
         rm -f "$PID_FILE"
         echo "already off"
-        return
     fi
-    kill "$(cat "$PID_FILE")"
-    rm -f "$PID_FILE"
-    echo "off"
+
+    # Revert lid-close sleep only if we were the ones who disabled it. Setting it
+    # back to 0 is idempotent, so we trust the marker over live detection — that
+    # way teardown is robust even if the SleepDisabled read ever misfires.
+    if [[ -f "$LID_MARKER" ]]; then
+        sudo pmset -a disablesleep 0
+        rm -f "$LID_MARKER"
+        echo "lid-close sleep: restored"
+    fi
 }
 
 cmd_status() {
     if is_running; then
-        echo "on (pid $(cat "$PID_FILE"))"
+        echo "idle/system sleep: held off (pid $(cat "$PID_FILE"))"
     else
         rm -f "$PID_FILE"
-        echo "off"
+        echo "idle/system sleep: off"
+    fi
+
+    if lid_sleep_disabled; then
+        if [[ -f "$LID_MARKER" ]]; then
+            echo "lid-close sleep: disabled (by caffeine)"
+        else
+            echo "lid-close sleep: disabled (not by caffeine — 'sudo pmset -a disablesleep 0' to clear)"
+        fi
+    else
+        rm -f "$LID_MARKER"
+        echo "lid-close sleep: enabled"
     fi
 }
 
+# Echo "yes" if the case-insensitive --lid flag appears among the arguments.
+parse_lid() {
+    local arg
+    for arg in "$@"; do
+        [[ "$(echo "$arg" | tr '[:upper:]' '[:lower:]')" == "--lid" ]] && { echo "yes"; return; }
+    done
+    echo "no"
+}
+
 cmd="${1:-toggle}"
+shift || true
 case "$(echo "$cmd" | tr '[:upper:]' '[:lower:]')" in
-    on)     cmd_on ;;
+    on)     cmd_on "$(parse_lid "$@")" ;;
     off)    cmd_off ;;
     status) cmd_status ;;
     toggle)
-        if is_running; then cmd_off; else cmd_on; fi
+        if is_running; then cmd_off; else cmd_on "$(parse_lid "$@")"; fi
         ;;
     *)
-        echo >&2 "usage: caffeine [on|off|status|toggle]"
+        echo >&2 "usage: caffeine [on [--lid]|off|status|toggle]"
         exit 1
         ;;
 esac
