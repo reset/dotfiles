@@ -143,7 +143,7 @@ Requires `~/.claude/hook-tmux.sh` (tracked). Add to `settings.json` under `"hook
 ],
 "Notification": [
   { "matcher": "", "hooks": [
-    { "type": "command", "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'" },
+    { "type": "command", "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\" sound name \"Glass\"'" },
     { "type": "command", "command": "bash ~/.claude/hook-tmux.sh wait" }
   ]}
 ],
