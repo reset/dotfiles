@@ -286,10 +286,13 @@ def main() -> None:
     # Largest unique-to-library files (re-grab / delete-for-disk triage)
     print()
     print('=== Largest unique files in library (top 20 by size) ===')
-    print('  ratio/seeded = the torrent backing this file; "-" = no torrent (orphan or manual add)')
+    print('  delete? answers "is removing this file safe for your seed ratio?"')
+    print('    ✓ yes — ratio paid OR no torrent backing the file (zero seeding cost)')
+    print('    ~ wait — torrent has not met ratio/seed-time targets yet')
+    print('    ✗ no  — risky to delete, would hurt your standing')
     print()
-    print(f'  {"size":>7}  {"":<3} {"ratio":>6}  {"seeded":>8}  path')
-    print(f'  {"-" * 7}  {"-" * 3} {"-" * 6}  {"-" * 8}  {"-" * 50}')
+    print(f'  {"size":>7}  {"delete?":<7}  {"ratio":>6}  {"seeded":>8}  path')
+    print(f'  {"-" * 7}  {"-" * 7}  {"-" * 6}  {"-" * 8}  {"-" * 50}')
     icons = {'safe': '✓', 'borderline': '~', 'risky': '✗'}
     library_files: list[tuple[int, int, str]] = []
     for ino, paths in paths_per_inode.items():
@@ -302,14 +305,15 @@ def main() -> None:
         t = torrent_by_inode.get(ino)
         if t:
             verdict = seed_verdict(t['uploadRatio'], t['secondsSeeding'])
-            icon = icons[verdict]
+            delete_safe = icons[verdict]
             ratio_str = f'{t["uploadRatio"]:.2f}' if t['uploadRatio'] < 100 else '>99'
             seeded = hours(t['secondsSeeding'])
         else:
-            icon = '?'
-            ratio_str = '-'
-            seeded = '-'
-        print(f'  {gb(size):>6.2f}G  {icon:<3} {ratio_str:>6}  {seeded:>8}  {short[:60]}')
+            # No torrent backs this file — deleting has zero seeding cost
+            delete_safe = '✓'
+            ratio_str = '—'
+            seeded = 'no torrent'
+        print(f'  {gb(size):>6.2f}G  {delete_safe:<7}  {ratio_str:>6}  {seeded:>8}  {short[:60]}')
 
     # Seeding state
     print()
