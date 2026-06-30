@@ -571,6 +571,13 @@ ssh reset@192.168.1.28 "du -sh /var/lib/transmission-daemon/downloads/tv-shows/*
 | 5 | Ultra-HD | Same as Radarr Ultra-HD — check for accidental use |
 | 6 | HD-720p/1080p | A few shows (The Bridge, Workaholics, Ren & Stimpy, Devotion) |
 
+**Sonarr custom-format rejects (score -10000, applied to every profile):**
+
+| Name | Threshold | Why |
+|------|-----------|-----|
+| `Too Large` | Size > 5 GB | Rejects pack-shaped behemoths that match no episode marker |
+| `Too Large Episode` | Size > 2.5 GB AND title matches `S\d{1,2}E\d{1,2}` | Rejects single episodes encoded at wasteful bitrates (>~8 Mbps for a 45-min show). Season packs without per-episode markers pass through. |
+
 **Never leave a movie on Ultra-HD (profile 5) accidentally.** Check which movies are on Ultra-HD:
 
 ```bash
