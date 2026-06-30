@@ -129,6 +129,25 @@ Configuration is layered — each layer has a job:
 - When you need a hook or setting to follow you across machines, **document the snippet in `~/.claude/CLAUDE.md`** instead of tracking the live file. The instructions are tracked; the live state stays per-machine.
 - When in doubt, don't track. Adding a file later is easy; redacting after a leak is not.
 
+## SSH
+
+`~/.ssh/config` is not tracked. Reconstruct on a fresh machine:
+
+### Home server via Cloudflare tunnel
+
+`linux-build-1` (the home media server at `192.168.1.28`) is reachable over the internet through a Cloudflare tunnel published as `ssh.reset.dev`. Requires the `cloudflared` brew package (in `~/Brewfile`).
+
+Add to `~/.ssh/config`:
+
+```
+Host reset.dev linux-build-1
+	HostName ssh.reset.dev
+	User reset
+	ProxyCommand cloudflared access ssh --hostname %h
+```
+
+Connect with `ssh reset.dev` (memorable) or `ssh linux-build-1` (machine hostname) — both aliases resolve to the same tunnel. On LAN, `reset@192.168.1.28` still works directly with no tunnel hop.
+
 ## Claude Code Settings
 
 `~/.claude/settings.json` is not tracked (see Dotfiles above). Reconstruct these on a fresh machine:
