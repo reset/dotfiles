@@ -1,11 +1,13 @@
 ---
 name: media-server
-description: Manage Jamie's home media server — the *arr stack (Sonarr, Radarr, Prowlarr) + Transmission + Plex running at 192.168.1.28. Use whenever the user wants to add/import shows or movies, fix health checks, check seeding, manage Plex libraries, debug download issues, or do anything involving the home server media setup. Triggers on "add a show", "import movies", "Sonarr", "Radarr", "Plex", "Transmission", "media server", "download a movie", "health check", "seeding broken", "*arr".
+description: Manage Jamie's home media server — the *arr stack (Sonarr, Radarr, Prowlarr) + Transmission + Jellyfin running at 192.168.1.28. Use whenever the user wants to add/import shows or movies, fix health checks, check seeding, manage Jellyfin libraries, debug download issues, or do anything involving the home server media setup. Triggers on "add a show", "import movies", "Sonarr", "Radarr", "Jellyfin", "Seerr", "Transmission", "media server", "download a movie", "health check", "seeding broken", "*arr".
 ---
 
 # Media Server
 
-Jamie's home media server at `reset@192.168.1.28` (hostname: `linux-build-1`). SSH access is available directly from this machine. DHCP reservation locks it to this IP permanently.
+Jamie's home media server at `reset@192.168.1.28` (hostname: `linux-build-1`). DHCP reservation locks it to this IP permanently.
+
+**SSH access**: on LAN use `reset@192.168.1.28`. Off LAN, a Cloudflare tunnel publishes the box at `ssh.reset.dev`; with the `~/.ssh/config` block in place, `ssh reset.dev` Just Works from anywhere (see the SSH section in `~/.claude/CLAUDE.md`).
 
 ## Stack overview
 
@@ -17,14 +19,17 @@ Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-
 | Radarr | linuxserver/radarr | 7878 | `/opt/arr/radarr/` | `http://radarr.home` |
 | Prowlarr | linuxserver/prowlarr | 9696 | `/opt/arr/prowlarr/` | `http://prowlarr.home` |
 | Transmission | linuxserver/transmission | 9091 | `/opt/arr/transmission/` | `http://transmission.home` |
-| Plex | linuxserver/plex | 32400 | `/var/lib/plexmediaserver/` | `http://plex.home` |
+| Jellyfin | linuxserver/jellyfin | 8096 | `/opt/arr/jellyfin/` | `http://jellyfin.home` |
+| Jellystat | cyfershepard/jellystat | 3000 | `/opt/arr/jellystat/` | `http://jellystat.home` |
+| Seerr | ghcr.io/seerr-team/seerr | 5055 | `/opt/arr/overseerr/` | `http://seerr.home` |
 | Pi-hole | pihole/pihole | 53 (DNS), 8080 (web) | `/opt/arr/pihole/` | `http://pihole.home` |
 | Caddy | caddy | 80 | `/opt/arr/caddy/Caddyfile` | — |
+| Cloudflared | cloudflare/cloudflared | — | — (token-managed) | — |
 | unpackerr | golift/unpackerr | — | `/opt/arr/unpackerr/` | — |
-| Seerr | — | — | — | `http://seerr.home` |
-| Tautulli | — | — | — | `http://tautulli.home` |
 
-**Note:** Transmission and Plex were previously native systemd services. They were migrated to Docker. The systemd services are disabled (`systemctl is-enabled` returns `disabled` for both).
+**Remote access via Cloudflare tunnel**: `watch.reset.dev` → Jellyfin (port 8096), `ssh.reset.dev` → sshd (port 22). Both ride the same `cloudflared` container; routes are managed in the Cloudflare Zero Trust dashboard (tunnel name `stormbreaker-server`), not in a local config file.
+
+**Note:** Transmission was previously a native systemd service. It was migrated to Docker; the systemd service is disabled (`systemctl is-enabled transmission-daemon` returns `disabled`).
 
 **Auth:** Sonarr, Radarr, and Prowlarr have authentication disabled for local addresses (`authenticationMethod: none`, `authenticationRequired: disabledForLocalAddresses`). No login required on the home network.
 
@@ -57,14 +62,14 @@ ssh reset@192.168.1.28 "docker exec caddy caddy reload --config /etc/caddy/Caddy
 | `/var/lib/transmission-daemon/downloads/movies/` | Movie downloads + Radarr library root |
 | `/var/lib/transmission-daemon/downloads/tv-sonarr/` | Sonarr's active download category dir |
 | `/var/lib/transmission-daemon/downloads/radarr/` | Radarr's active download category dir |
-| `/var/lib/plexmediaserver/` | Plex data root (mounted as `/config` in container) |
-| `/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/` | Plex library, metadata, Preferences.xml |
+| `/opt/arr/jellyfin/` | Jellyfin config + metadata cache |
+| `/opt/arr/jellystat/db/` | Jellystat's Postgres data volume |
 
-The download directory and library root are the **same directory** for both Sonarr and Radarr. Plex points at these same paths.
+The download directory and library root are the **same directory** for both Sonarr and Radarr. Jellyfin mounts these read-only at `/media`.
 
 ## Container path mapping
 
-Sonarr/Radarr/Prowlarr/Transmission/Plex all mount `/var/lib/transmission-daemon/downloads/` as `/downloads/` inside the container. A remote path mapping is configured in Sonarr and Radarr:
+Sonarr/Radarr/Prowlarr/Transmission all mount `/var/lib/transmission-daemon/downloads/` as `/downloads/` inside the container. Jellyfin mounts the same path as `/media` (read-only). A remote path mapping is configured in Sonarr and Radarr:
 
 - Remote (Transmission reports): `/var/lib/transmission-daemon/downloads/`
 - Local (container sees): `/downloads/`
@@ -114,8 +119,11 @@ ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml
 # Prowlarr
 ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/prowlarr/config.xml"
 
-# Plex token
-ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'"
+# Jellyfin API key (read from Seerr's saved settings — Jellyfin doesn't expose it in a single file)
+ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'"
+
+# Seerr API key
+ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"main\"][\"apiKey\"])'"
 
 # Transmission credentials — username: reset, password in 1Password: "Media Server (*arr / Transmission)"
 ```
@@ -219,8 +227,11 @@ Without a remote path mapping, Sonarr/Radarr report "directory does not exist in
 - Remote path: `/var/lib/transmission-daemon/downloads/`
 - Local path: `/downloads/`
 
-### Plex volume mount — use the parent directory
-The linuxserver/plex container sets `PLEX_MEDIA_SERVER_APPLICATION_SUPPORT_DIR=/config/Library/Application Support`. The volume mount must be `/var/lib/plexmediaserver:/config` (the parent), NOT the deep path `/var/lib/plexmediaserver/Library/Application Support/Plex Media Server:/config`. If the deep path is used, the container creates a fresh nested Plex setup and ignores the existing library.
+### Jellyfin library scene-folder duplicates
+The hardlink-and-keep-seeding architecture means every imported movie exists in two folders: the scene-named torrent folder (e.g. `Movie.Name.2024.1080p.WEBRip-GROUP/`) and the cleanly-named Radarr folder (`Movie Name (2024)/`). Jellyfin scans both and creates two library items for the same TMDB ID. Two ways to handle:
+
+1. **MergeVersions API** (preferred, no filesystem mutation): `POST /Videos/MergeVersions?ids=ID1,ID2,...` collapses duplicates into one item with multiple selectable "versions". Run via Jellyfin admin API. Scene folders keep seeding; library count matches actual unique films.
+2. **`.ignore` files**: drop a `.ignore` file inside any folder Jellyfin should skip. Used for scene folders we don't want catalogued at all (e.g. `[scene-tag] Show Name`). Path: `/var/lib/transmission-daemon/downloads/{movies,tv-shows}/<folder>/.ignore`.
 
 ### Transmission config path changed from systemd
 The native systemd Transmission stored state in `/var/lib/transmission-daemon/.config/transmission-daemon/`. The Docker container uses `/opt/arr/transmission/` — all 2204 resume files and torrent state were migrated there. The downloads directory (`/var/lib/transmission-daemon/downloads/`) is the same in both cases.
@@ -231,32 +242,48 @@ Pi-hole v6 changed the web password env var from `WEBPASSWORD` to `FTLCONF_webse
 ### systemd-resolved conflicts with Pi-hole
 Ubuntu's `systemd-resolved` stub listener occupies port 53 on loopback by default. Required fix on the host: `DNSStubListener=no` in `/etc/systemd/resolved.conf`, then `systemctl restart systemd-resolved`. Already applied.
 
-## Plex
+## Jellyfin
+
+Jellyfin replaced Plex in 2026-06. Public access via `https://watch.reset.dev` (Cloudflare tunnel → `localhost:8096`). API auth uses `X-Emby-Token` header (the API key is also stored in Seerr's `settings.json`).
 
 ```bash
-# List libraries (shows paths)
-PLEX_TOKEN=$(ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'")
-curl -sf "http://192.168.1.28:32400/library/sections?X-Plex-Token=$PLEX_TOKEN" | python3 -c "
-import sys, xml.etree.ElementTree as ET
-root = ET.parse(sys.stdin).getroot()
-for d in root.findall('Directory'):
-    print(d.get('type'), d.get('title'), [l.get('path') for l in d.findall('Location')])
-"
+JF_KEY=$(ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'")
 
-# Trigger library scan
-curl -sf -X POST "http://192.168.1.28:32400/library/sections/SECTION_ID/refresh?X-Plex-Token=$PLEX_TOKEN"
+# Server info
+curl -sf http://192.168.1.28:8096/System/Info -H "X-Emby-Token: $JF_KEY"
 
-# Set custom server URL (needed after proxy changes)
-curl -s -X PUT "http://192.168.1.28:32400/:/prefs?customConnections=http%3A%2F%2Fplex.home" \
-  -H "X-Plex-Token: $PLEX_TOKEN"
+# List libraries
+curl -sf http://192.168.1.28:8096/Library/VirtualFolders -H "X-Emby-Token: $JF_KEY"
 
-# Upgrade Plex (check latest version at https://plex.tv/api/downloads/5.json)
-ssh reset@192.168.1.28 "wget -q -O /tmp/plex.deb 'https://downloads.plex.tv/plex-media-server-new/VERSION/debian/plexmediaserver_VERSION_amd64.deb' && sudo dpkg -i /tmp/plex.deb"
+# Trigger library scan (all libraries)
+curl -sf -X POST http://192.168.1.28:8096/Library/Refresh -H "X-Emby-Token: $JF_KEY"
+
+# List users
+curl -sf http://192.168.1.28:8096/Users -H "X-Emby-Token: $JF_KEY"
+
+# Get all movies (TotalRecordCount + items)
+ADMIN=3b436fbff61444bfb530cb58cb355f02  # 'reset' admin user id — find via /Users
+curl -sf "http://192.168.1.28:8096/Users/$ADMIN/Items?Recursive=true&IncludeItemTypes=Movie&Fields=ProviderIds,Path&Limit=10000" -H "X-Emby-Token: $JF_KEY"
+
+# Merge duplicate movie items (use after a re-scan creates scene-folder duplicates)
+curl -sf -X POST "http://192.168.1.28:8096/Videos/MergeVersions?ids=ID1,ID2" -H "X-Emby-Token: $JF_KEY"
 ```
 
-Current libraries:
-- `[movie]` Movies → `/var/lib/transmission-daemon/downloads/movies`
-- `[show]` TV Shows → `/var/lib/transmission-daemon/downloads/tv-shows`
+Current libraries (configured in Jellyfin admin):
+- Movies → `/media/movies` (container path) = `/var/lib/transmission-daemon/downloads/movies` (host)
+- TV Shows → `/media/tv-shows` = `/var/lib/transmission-daemon/downloads/tv-shows`
+
+Real-time monitoring is enabled on both libraries, so new files imported by Sonarr/Radarr appear in Jellyfin within seconds without an explicit refresh.
+
+Hardware transcoding is enabled (VAAPI, `/dev/dri/renderD128`). The Haswell iGPU (i7-4770R / HD 5200) hardware-decodes H.264, MPEG-2, and VC1 only — anything HEVC/VP9/AV1 falls back to CPU.
+
+## Jellystat (Jellyfin analytics — Tautulli replacement)
+
+`http://jellystat.home` / `http://localhost:3000`. Postgres backend in `jellystat-db` container. Initial setup is interactive (admin account + Jellyfin URL + API key). Credentials in 1Password: "Jellystat (media-server)".
+
+## Seerr (request frontend)
+
+`http://seerr.home` / `http://localhost:5055`. Wired to Jellyfin via `mediaServerType=2` in `settings.json`. Plex login was removed (`newPlexLogin: false`). Use Seerr admin → Jobs → "Jellyfin Full Library Sync" to refresh availability state after a big import batch.
 
 ## Indexer (Prowlarr → IPTorrents)
 
@@ -350,13 +377,13 @@ curl -sf http://192.168.1.28:7878/api/v3/health -H "X-Api-Key: $RADARR_KEY"
 
 Automated monitoring runs every 4 hours via `/etc/cron.d/arr-monitor`; logs to `/var/log/arr-monitor.log`. Script at `/opt/arr/monitor.py`.
 
-### Trigger Plex library refresh
+### Trigger Jellyfin library refresh
+
+Usually unnecessary — real-time monitoring picks up new files within seconds. But for a forced full re-scan:
 
 ```bash
-PLEX_TOKEN=$(ssh reset@192.168.1.28 "sudo grep -oP 'PlexOnlineToken=\"\K[^\"]+' '/var/lib/plexmediaserver/Library/Application Support/Plex Media Server/Preferences.xml'")
-# Movies = section 1, TV = section 2 (verify with /library/sections first)
-curl -sf -X POST "http://192.168.1.28:32400/library/sections/1/refresh?X-Plex-Token=$PLEX_TOKEN"
-curl -sf -X POST "http://192.168.1.28:32400/library/sections/2/refresh?X-Plex-Token=$PLEX_TOKEN"
+JF_KEY=$(ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'")
+curl -sf -X POST http://192.168.1.28:8096/Library/Refresh -H "X-Emby-Token: $JF_KEY"
 ```
 
 ## Disk Management
@@ -366,7 +393,7 @@ curl -sf -X POST "http://192.168.1.28:32400/library/sections/2/refresh?X-Plex-To
 Every downloaded file exists in two folders — this is by design, not waste:
 
 1. **Scene/torrent folder** (`movies/Scene.Name.Year.1080p.x264-GROUP/`) — original download path; Transmission seeds from here.
-2. **Clean folder** (`movies/Title (Year)/`) — what Radarr/Sonarr created via hardlink for Plex.
+2. **Clean folder** (`movies/Title (Year)/`) — what Radarr/Sonarr created via hardlink for the media server.
 
 Both folder entries point to the **same inode** (confirmed: `nlink=2`). Deleting the scene folder frees zero bytes — it just breaks seeding. Don't delete scene folders to save space.
 

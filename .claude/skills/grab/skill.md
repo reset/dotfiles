@@ -1,6 +1,6 @@
 ---
 name: grab
-description: Add a movie or TV show to the home media server for download. Use when the user says "grab X", "download X", "add X to Plex/Sonarr/Radarr", or "I want to watch X". Figures out movie vs TV automatically, searches the correct service, confirms the match, and adds it. Requires the /media-server skill context.
+description: Add a movie or TV show to the home media server for download. Use when the user says "grab X", "download X", "add X to Jellyfin/Sonarr/Radarr", or "I want to watch X". Figures out movie vs TV automatically, searches the correct service, confirms the match, and adds it. Requires the /media-server skill context.
 ---
 
 # /grab — Add Content to the Media Server
@@ -30,7 +30,7 @@ Adds a movie or TV show to the home server at `reset@192.168.1.28`.
    - TV → Sonarr, quality profile **Any (id=1)**, monitor="all", searchForMissingEpisodes=true.
    - Anime TV → same as TV but set seriesType="anime" after adding (PUT /api/v3/series/{id}).
 
-6. **Confirm** — report back: "Added [title] to [Radarr/Sonarr]. It'll appear in Plex once downloaded (~5–30 min)."
+6. **Confirm** — report back: "Added [title] to [Radarr/Sonarr]. It'll appear in Jellyfin once downloaded (~5–30 min)."
 
 ## Movie add payload
 
