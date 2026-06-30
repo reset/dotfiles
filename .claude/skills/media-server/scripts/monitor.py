@@ -3,7 +3,7 @@
 Health monitor for the home *arr stack + Transmission.
 Usage: python3 /opt/arr/monitor.py [--quiet]
 Exit: 0 if all clean, 1 if any issues found.
-Logs to /var/log/arr-monitor.log (append).
+Logs to /opt/arr/monitor.log (append).
 """
 import sys
 import json
@@ -15,7 +15,7 @@ import random
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import to_host_path  # noqa: E402
+from arrlib import make_trans_rpc, to_host_path  # noqa: E402
 
 QUIET = "--quiet" in sys.argv
 LOG_FILE = "/opt/arr/monitor.log"
@@ -55,26 +55,26 @@ def arr_health(name, base_url, key, api_version="v3"):
 # Check Sonarr
 sonarr_key = get_api_key("/opt/arr/sonarr/config.xml")
 if sonarr_key:
-    arr_health("Sonarr", "http://192.168.1.28:8989", sonarr_key)
+    arr_health("Sonarr", "http://localhost:8989", sonarr_key)
 else:
     issues.append("Sonarr: could not read API key")
 
 # Check Radarr
 radarr_key = get_api_key("/opt/arr/radarr/config.xml")
 if radarr_key:
-    arr_health("Radarr", "http://192.168.1.28:7878", radarr_key)
+    arr_health("Radarr", "http://localhost:7878", radarr_key)
 else:
     issues.append("Radarr: could not read API key")
 
 # Check Prowlarr
 prowlarr_key = get_api_key("/opt/arr/prowlarr/config.xml")
 if prowlarr_key:
-    arr_health("Prowlarr", "http://192.168.1.28:9696", prowlarr_key, api_version="v1")
+    arr_health("Prowlarr", "http://localhost:9696", prowlarr_key, api_version="v1")
 else:
     issues.append("Prowlarr: could not read API key")
 
 # Check Transmission — errored torrents
-URL = "http://192.168.1.28:9091/transmission/rpc"
+URL = "http://localhost:9091/transmission/rpc"
 USER, PASS = "transmission", os.environ.get("TRANSMISSION_PASS", "")
 if not PASS:
     # Don't proceed; subsequent requests would fail with 401 and add a
@@ -84,24 +84,7 @@ if not PASS:
 try:
     if PASS is None:
         raise RuntimeError("skipped: no TRANSMISSION_PASS")
-    handler = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    handler.add_password(None, URL, USER, PASS)
-    opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(handler))
-    session_id = ""
-    try:
-        opener.open(URL)
-    except urllib.error.HTTPError as e:
-        session_id = e.headers.get("X-Transmission-Session-Id", "")
-
-    def rpc(method, args=None):
-        req = urllib.request.Request(
-            URL,
-            data=json.dumps({"method": method, "arguments": args or {}}).encode(),
-            headers={"X-Transmission-Session-Id": session_id, "Content-Type": "application/json"}
-        )
-        with opener.open(req, timeout=10) as r:
-            return json.loads(r.read())["arguments"]
-
+    rpc = make_trans_rpc(URL, USER, PASS)
     result = rpc("torrent-get", {"fields": ["id", "name", "errorString", "downloadDir", "files", "percentDone"]})
     torrents = result.get("torrents", [])
 
