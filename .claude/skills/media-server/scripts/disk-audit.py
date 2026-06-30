@@ -29,6 +29,9 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from arrlib import normalize, parse_title_year  # noqa: E402
+
 DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CATEGORIES = ['movies', 'tv-shows', 'radarr', 'tv-sonarr']
 
@@ -180,12 +183,113 @@ def print_seed_status(paths_per_inode: dict[int, list[str]]) -> None:
     print('  Removing "borderline" or "risky": will hurt your standing — only do it if you have to.')
 
 
+def group_library_duplicates(paths_per_inode: dict[int, list[str]], inode_size: dict[int, int]) -> dict[tuple[str, int | None], list[tuple[int, int, str]]]:
+    """Group library files by parsed (normalized-title, year).
+
+    Returns a dict keyed by (norm_title, year) → [(size, inode, sample_path), ...].
+    Only includes inodes that appear in `movies/` or `tv-shows/`. Used to
+    surface logical duplicates: e.g. a movie that exists as both a clean
+    Radarr folder AND a flat scene file. Each entry has a distinct inode,
+    so deleting one releases its bytes without affecting the other.
+    """
+    # Movies-only: TV episodes inherently produce many inodes per series, so
+    # grouping by (series-title, year) would flag every episode as a duplicate.
+    # The user-visible problem is "same movie, two inodes" (clean folder + flat
+    # scene file) — that lives entirely in /movies/.
+    VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts')
+    raw: dict[tuple[str, int | None], list[tuple[int, int, str]]] = defaultdict(list)
+    for ino, paths in paths_per_inode.items():
+        for p in paths:
+            if category_of(p) != 'movies':
+                continue
+            if not p.lower().endswith(VIDEO_EXTS):
+                continue  # ignore .nfo, .png screenshots, sample artifacts
+            # Prefer the parent folder name (carries the canonical "Movie (Year)"
+            # naming) unless the file sits flat in the category root, in which
+            # case the filename is the only place the title lives.
+            parent = os.path.basename(os.path.dirname(p))
+            source = parent if parent not in CATEGORIES else os.path.basename(p)
+            title, year = parse_title_year(source)
+            if not title:
+                continue
+            key = (normalize(title), year)
+            raw[key].append((inode_size[ino], ino, p))
+            break  # one entry per inode
+
+    # Filter out groups whose entries all share the same parent directory.
+    # That's how movie collections (Karate Kid Collection containing 4 films)
+    # and sample/.nfo cruft inside a scene folder look — they're inherently
+    # multi-file in one folder, not redundant releases across folders.
+    # A real duplicate (clean Radarr folder + flat scene file) has entries
+    # with distinct parent paths.
+    groups: dict[tuple[str, int | None], list[tuple[int, int, str]]] = {}
+    for key, entries in raw.items():
+        parents = {os.path.dirname(e[2]) for e in entries}
+        if len(parents) > 1:
+            groups[key] = entries
+    return groups
+
+
+def print_duplicates(paths_per_inode: dict[int, list[str]], inode_size: dict[int, int], torrent_by_inode: dict[int, dict]) -> None:
+    """List inode groups in the library that share a parsed (title, year).
+
+    Two inodes in the same group are two different files representing the
+    same logical movie — usually a clean Radarr-managed copy and a flat
+    scene file at /movies/ root, or two competing releases. Each can be
+    deleted independently.
+    """
+    print()
+    print('=== Logical duplicates in library (same parsed title+year, different inodes) ===')
+    groups = group_library_duplicates(paths_per_inode, inode_size)
+    duplicates = {k: v for k, v in groups.items() if len(v) > 1}
+    if not duplicates:
+        print('  none — every logical title has a single inode in the library.')
+        return
+
+    icons = {'safe': '✓', 'borderline': '~', 'risky': '✗'}
+    # Filter groups by meaningful extra reclaim (≥10MB). Smaller secondary
+    # entries are typically .nfo / sample files, not real duplicates worth
+    # surfacing as a reclaim opportunity.
+    MIN_RECLAIM = 10 * 1024 * 1024
+    significant = {
+        k: v for k, v in duplicates.items()
+        if sum(e[0] for e in v[1:]) >= MIN_RECLAIM
+    }
+    if not significant:
+        print('  no meaningful duplicates (filtered out .nfo / sample-file noise <10MB).')
+        return
+    total_extra = 0
+    for (title_norm, year), entries in sorted(significant.items(), key=lambda x: -sum(e[0] for e in x[1][1:])):
+        entries.sort(key=lambda e: -e[0])
+        extra = sum(e[0] for e in entries[1:])
+        total_extra += extra
+        label = f'{title_norm}'
+        if year:
+            label += f' ({year})'
+        print(f'\n  {label}  — {len(entries)} inodes, extra reclaim if dedup\'d: {gb(extra):.2f}G')
+        for size, ino, path in entries:
+            t = torrent_by_inode.get(ino)
+            if t:
+                v = seed_verdict(t['uploadRatio'], t['secondsSeeding'])
+                annot = f'{icons[v]} ratio={t["uploadRatio"]:.2f} {hours(t["secondsSeeding"])}'
+            else:
+                annot = '✓ no torrent'
+            short = path[len(DOWNLOADS) + 1 :]
+            print(f'    {gb(size):>6.2f}G  {annot:<32}  {short[:80]}')
+    print(f'\n  Total reclaim if you dedup\'d every group (keep largest in each): {gb(total_extra):.2f}G')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
     parser.add_argument(
         '--seed-status',
         action='store_true',
         help='Also print a per-torrent seed-policy verdict (ratio + seed-time vs IPTorrents-style targets)',
+    )
+    parser.add_argument(
+        '--duplicates',
+        action='store_true',
+        help='Also list logical-duplicate inodes in the library — same movie, different files',
     )
     args = parser.parse_args()
 
@@ -332,6 +436,9 @@ def main() -> None:
 
     if args.seed_status:
         print_seed_status(paths_per_inode)
+
+    if args.duplicates:
+        print_duplicates(paths_per_inode, inode_size, torrent_by_inode)
 
 
 if __name__ == '__main__':

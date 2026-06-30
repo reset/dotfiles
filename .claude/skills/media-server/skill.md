@@ -437,6 +437,8 @@ curl -sf -X POST http://192.168.1.28:8096/Library/Refresh -H "X-Emby-Token: $JF_
 
 **Before removing torrents, run `/opt/arr/disk-audit.py --seed-status`.** Per-torrent verdict (`safe` / `borderline` / `risky`) against IPTorrents-style targets (ratio ≥ 1.0 OR seeded ≥ 72h, whichever first). Cumulative-ratio panic isn't the right lens; what matters is whether each individual torrent has paid its dues.
 
+**Before deleting movies for disk reasons, run `/opt/arr/disk-audit.py --duplicates`.** Surfaces inodes in `movies/` that share a parsed (title, year) but live in different parent folders — i.e., a movie that exists as both a clean Radarr-managed folder AND a flat scene file or scene-named sibling. The `top 20 largest unique files` view shows the biggest single inode per movie; this view shows when a movie has *more than one* inode and how much disk a dedup would reclaim. Filters: movies only (TV episodes inherently produce many inodes per series), video extensions only (.mkv/.mp4/.avi/.m4v/.ts), and groups where total extra reclaim is ≥10MB (suppresses .nfo / sample-file noise).
+
 Two things you can actually reclaim:
 1. **Genuine orphans** — folders in staging that Transmission isn't tracking. Usually unpackerr leftovers (root-owned RAR extracts the torrent removal couldn't delete). The audit tool flags these explicitly.
 2. **Big unique files** — oversized movies/episodes you'd re-grab at smaller quality. Library-side; doesn't touch seeding.

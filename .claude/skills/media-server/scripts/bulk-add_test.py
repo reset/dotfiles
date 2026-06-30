@@ -8,6 +8,7 @@ import unittest
 
 # Load bulk-add.py as a module (hyphen in filename → importlib).
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 spec = importlib.util.spec_from_file_location('bulk_add', os.path.join(HERE, 'bulk-add.py'))
 bulk_add = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bulk_add)
