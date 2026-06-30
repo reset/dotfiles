@@ -388,6 +388,19 @@ curl -sf -X POST http://192.168.1.28:8096/Library/Refresh -H "X-Emby-Token: $JF_
 
 ## Disk Management
 
+### ⚠️ The hardlink trap — read this before reclaiming space
+
+`du -sh /downloads/*` lies on this box. Files in staging (`radarr/`, `tv-sonarr/`) are **hardlinked** into the library (`movies/`, `tv-shows/`) — same bytes, multiple filenames, one inode. `du` charges the bytes to one path arbitrarily and ignores the others, which makes staging look enormous when in fact deleting it would free almost nothing.
+
+**Before doing anything that "frees" space, run `/opt/arr/disk-audit.py`.** It reports the honest numbers — per-category "unique" bytes (what you'd really reclaim) vs "shared" bytes (hardlinked, deleting one path frees zero). Also surfaces true orphans (staging dirs no torrent holds), largest unique-to-library files, and current seed ratio. Read-only — no mutation.
+
+Two things you can actually reclaim:
+1. **Genuine orphans** — folders in staging that Transmission isn't tracking. Usually unpackerr leftovers (root-owned RAR extracts the torrent removal couldn't delete). The audit tool flags these explicitly.
+2. **Big unique files** — oversized movies/episodes you'd re-grab at smaller quality. Library-side; doesn't touch seeding.
+
+What you **cannot** reclaim by deleting staging:
+- Any torrent that's been imported. The file in the library is hardlinked from the staging copy. Removing the staging copy frees 0 bytes and stops the torrent from seeding. Bad trade — surfaces as ratio damage with no disk benefit. The skill made this mistake once; the audit tool exists to prevent the second.
+
 ### Understanding the directory layout
 
 Every downloaded file exists in two folders — this is by design, not waste:
@@ -406,7 +419,11 @@ Both folder entries point to the **same inode** (confirmed: `nlink=2`). Deleting
 
 ### Cleaning radarr/tv-sonarr staging
 
-Staging dirs accumulate imported-but-not-yet-cleared torrents. Safe to clean up anything already imported (Radarr/Sonarr has the file). The hardlinked copy in `movies/` or `tv-shows/` survives Transmission deletion.
+**Run `/opt/arr/disk-audit.py` first.** If "tv-sonarr unique" is 0 GB, removing torrents from there reclaims zero disk and only damages your seed ratio. The cleanup pattern below is mostly useful for unpackerr leftovers (root-owned files that `torrent-remove --delete-local-data` can't reach) and for the rare not-yet-imported torrent stuck in staging.
+
+**For pure orphan cleanup** (the safe path), use the audit tool to identify orphans and `sudo rm -rf` them directly — no Transmission call needed because there's no torrent to remove.
+
+**For removing imported torrents** (the trade-off path — frees no disk but stops seeding the torrent), continue with the pattern below. Worth it only if you're over your seed-keep window AND the audit tool confirms the torrent has unique bytes (unpackerr leftovers).
 
 **Note: Radarr/Sonarr API returns 500 when disk is full.** If you get empty or 500 responses, check `df -h /` first.
 
