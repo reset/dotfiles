@@ -105,6 +105,47 @@ http://newservice.home {
 ```
 Then reload: `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`
 
+## Remote access (Cloudflare tunnel)
+
+The `cloudflared` container runs a token-managed tunnel named **`stormbreaker-server`** under the personal Cloudflare account (Jamie's vialstudios.com login, account ID `0e966f88c17f8eba2d5c984b24f18663`, zone `reset.dev`). Because it's token-managed, **routes live in the Cloudflare Zero Trust dashboard, not in any local config file** — there's no `cloudflared` config.yml on the box to edit.
+
+Current routes:
+- `reset.dev`, `www.reset.dev` → website
+- `watch.reset.dev` → Jellyfin (`http://localhost:8096`)
+- `ssh.reset.dev` → sshd (`ssh://localhost:22`)
+
+To add a new route:
+1. Cloudflare dashboard → **Zero Trust → Networks → Tunnels → stormbreaker-server**
+2. **Routes** tab → **+ Add route → Published application**
+3. Fill in: subdomain, domain `reset.dev`, **Service URL** with the **protocol prefix** that picks the route type:
+   - `http://localhost:PORT` — HTTP services
+   - `https://localhost:PORT` — HTTPS origin
+   - `ssh://localhost:22` — SSH (use this prefix instead of a separate "Type: SSH" dropdown; the new UI infers protocol from the URL)
+   - `tcp://localhost:PORT` — generic TCP
+4. DNS record auto-created in Cloudflare for `<sub>.reset.dev`.
+
+For SSH specifically, the client uses `cloudflared access ssh --hostname ssh.reset.dev` as a `ProxyCommand`. The full client config is documented under "SSH" in `~/.claude/CLAUDE.md`.
+
+## Server-side scripts
+
+Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed up in this skill's `scripts/` folder (so they survive a server rebuild):
+
+| Path on server | Purpose | Triggered by |
+|----------------|---------|--------------|
+| `/opt/arr/disk-audit.py` | Honest disk accounting (hardlink-aware) + `--seed-status` per-torrent verdict | Manual |
+| `/opt/arr/bulk-add.py` | Parse scene-named folders and bulk-add to Radarr/Sonarr | Manual |
+| `/opt/arr/fix-seeding.py` | Restore hardlinks for files Sonarr/Radarr moved instead of hardlinked | Manual when seeding shows error |
+| `/opt/arr/monitor.py` | *arr health check, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
+
+**Redeploy to a new server**: copy each file from `~/.claude/skills/media-server/scripts/` to `/opt/arr/`, `chmod +x`. The monitor cron lives at `/etc/cron.d/arr-monitor` — recreate that separately.
+
+**Credentials**: the tracked copies of `fix-seeding.py` and `monitor.py` read the Transmission password from `$TRANSMISSION_PASS` (sanitized for the public-treat-as dotfiles repo). On the server, this needs to be set:
+- For the cron entry: `TRANSMISSION_PASS=...` in `/etc/cron.d/arr-monitor` (one line above the schedule)
+- For manual invocations: prepend `TRANSMISSION_PASS=... python3 /opt/arr/fix-seeding.py`
+- The password is in 1Password: "Media Server (*arr / Transmission)"
+
+Note: the *currently deployed* server scripts have the password hardcoded (predates the sanitization). When the env var pattern is adopted server-side, redeploy by overwriting with the sanitized copies + setting the env var.
+
 ## Getting API keys
 
 Never hardcode API keys — read them live from the config files:

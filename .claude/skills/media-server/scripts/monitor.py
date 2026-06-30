@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""
+Health monitor for the home *arr stack + Transmission.
+Usage: python3 /opt/arr/monitor.py [--quiet]
+Exit: 0 if all clean, 1 if any issues found.
+Logs to /var/log/arr-monitor.log (append).
+"""
+import sys
+import json
+import re
+import urllib.request
+import urllib.error
+import os
+import random
+from datetime import datetime
+
+QUIET = "--quiet" in sys.argv
+LOG_FILE = "/opt/arr/monitor.log"
+
+issues = []
+ok_msgs = []
+
+def log(msg):
+    if not QUIET:
+        print(msg)
+
+def get_api_key(config_path):
+    with open(config_path) as f:
+        m = re.search(r'<ApiKey>([^<]+)</ApiKey>', f.read())
+        return m.group(1) if m else None
+
+def arr_health(name, base_url, key, api_version="v3"):
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/{api_version}/health",
+            headers={"X-Api-Key": key}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            items = json.loads(r.read())
+        errors = [i for i in items if i.get("type") in ("error", "warning")]
+        if errors:
+            for e in errors:
+                issues.append(f"{name}: [{e['type'].upper()}] {e['message']}")
+        else:
+            ok_msgs.append(f"{name}: healthy")
+    except Exception as e:
+        issues.append(f"{name}: unreachable — {e}")
+
+# Check Sonarr
+sonarr_key = get_api_key("/opt/arr/sonarr/config.xml")
+if sonarr_key:
+    arr_health("Sonarr", "http://192.168.1.28:8989", sonarr_key)
+else:
+    issues.append("Sonarr: could not read API key")
+
+# Check Radarr
+radarr_key = get_api_key("/opt/arr/radarr/config.xml")
+if radarr_key:
+    arr_health("Radarr", "http://192.168.1.28:7878", radarr_key)
+else:
+    issues.append("Radarr: could not read API key")
+
+# Check Prowlarr
+prowlarr_key = get_api_key("/opt/arr/prowlarr/config.xml")
+if prowlarr_key:
+    arr_health("Prowlarr", "http://192.168.1.28:9696", prowlarr_key, api_version="v1")
+else:
+    issues.append("Prowlarr: could not read API key")
+
+# Check Transmission — errored torrents
+URL = "http://192.168.1.28:9091/transmission/rpc"
+USER, PASS = "transmission", os.environ.get("TRANSMISSION_PASS", "")
+if not PASS:
+    issues.append("Transmission: TRANSMISSION_PASS env var not set")
+try:
+    handler = urllib.request.HTTPPasswordMgrWithDefaultRealm()
+    handler.add_password(None, URL, USER, PASS)
+    opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(handler))
+    session_id = ""
+    try:
+        opener.open(URL)
+    except urllib.error.HTTPError as e:
+        session_id = e.headers.get("X-Transmission-Session-Id", "")
+
+    def rpc(method, args=None):
+        req = urllib.request.Request(
+            URL,
+            data=json.dumps({"method": method, "arguments": args or {}}).encode(),
+            headers={"X-Transmission-Session-Id": session_id, "Content-Type": "application/json"}
+        )
+        with opener.open(req, timeout=10) as r:
+            return json.loads(r.read())["arguments"]
+
+    result = rpc("torrent-get", {"fields": ["id", "name", "errorString", "downloadDir", "files"]})
+    torrents = result.get("torrents", [])
+
+    errored = [t for t in torrents if t.get("errorString", "").strip()]
+    if errored:
+        for t in errored[:5]:
+            issues.append(f"Transmission: torrent '{t['name']}' has error: {t['errorString']}")
+        if len(errored) > 5:
+            issues.append(f"Transmission: ... and {len(errored) - 5} more errored torrents")
+    else:
+        ok_msgs.append(f"Transmission: {len(torrents)} torrents, none errored")
+
+    # Spot-check hardlink integrity — sample 5 random torrent files
+    sample_torrents = random.sample(torrents, min(5, len(torrents)))
+    missing = []
+    for t in sample_torrents:
+        for f in t.get("files", [])[:1]:  # just check first file of each
+            full_path = os.path.join(t["downloadDir"], f["name"])
+            if not os.path.exists(full_path):
+                missing.append(f"{t['name']}: missing {f['name']}")
+    if missing:
+        for m in missing:
+            issues.append(f"Hardlink check: {m}")
+    else:
+        ok_msgs.append("Hardlink spot-check: 5 sampled torrent files present")
+
+except Exception as e:
+    issues.append(f"Transmission: unreachable — {e}")
+
+# Report
+timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+if issues:
+    summary = f"[{timestamp}] ISSUES ({len(issues)}):\n" + "\n".join(f"  - {i}" for i in issues)
+    if ok_msgs:
+        summary += "\nOK:\n" + "\n".join(f"  + {o}" for o in ok_msgs)
+else:
+    summary = f"[{timestamp}] OK: all checks passed ({', '.join(ok_msgs)})"
+
+log(summary)
+
+# Append to log file
+try:
+    with open(LOG_FILE, "a") as f:
+        f.write(summary + "\n")
+except Exception as e:
+    log(f"Warning: could not write to {LOG_FILE}: {e}")
+
+sys.exit(1 if issues else 0)
