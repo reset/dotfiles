@@ -32,6 +32,17 @@ from collections import defaultdict
 DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CATEGORIES = ['movies', 'tv-shows', 'radarr', 'tv-sonarr']
 
+# Transmission runs in a container and reports container-relative paths
+# (`/downloads/...`) via RPC. Map them to host paths.
+CONTAINER_DOWNLOADS = '/downloads'
+
+
+def to_host_path(p: str) -> str:
+    """Convert a Transmission-reported container path to the host filesystem path."""
+    if p.startswith(CONTAINER_DOWNLOADS + '/') or p == CONTAINER_DOWNLOADS:
+        return DOWNLOADS + p[len(CONTAINER_DOWNLOADS) :]
+    return p
+
 # Seed-policy thresholds — IPTorrents-style: ratio >= 1.0 OR seeded >= 72h
 SEED_RATIO_TARGET = 1.0
 SEED_TIME_TARGET = 72 * 3600  # 72 hours
@@ -135,7 +146,7 @@ def print_seed_status(paths_per_inode: dict[int, list[str]]) -> None:
         verdict = seed_verdict(t['uploadRatio'], t['secondsSeeding'])
         # Unique-bytes-for-this-torrent: walk torrent dir and count inodes
         # whose other hardlinks are all inside this torrent dir
-        torrent_path = os.path.join(t['downloadDir'], t['name'])
+        torrent_path = to_host_path(os.path.join(t['downloadDir'], t['name']))
         unique = 0
         if os.path.exists(torrent_path):
             for ino, size, p in walk_inodes(torrent_path):
@@ -248,19 +259,57 @@ def main() -> None:
             print(f'  {cat:<10}  {gb(unique_bytes):>6.2f}G unique  {entry[:80]}')
     print(f'\n  Total orphan reclaim: {gb(orphan_total_unique):.1f}G')
 
-    # Largest unique-to-library files (re-grab triage)
+    # Build inode -> torrent map so we can attribute each library file
+    # to its seeding torrent (if any) and surface ratio/verdict alongside size.
+    torrent_by_inode: dict[int, dict] = {}
+    try:
+        completed = [
+            t for t in trans_rpc(
+                'torrent-get',
+                {'fields': ['name', 'downloadDir', 'uploadRatio', 'secondsSeeding', 'percentDone']},
+            )['torrents']
+            if t['percentDone'] >= 1.0
+        ]
+        for t in completed:
+            tpath = to_host_path(os.path.join(t['downloadDir'], t['name']))
+            if os.path.isfile(tpath):
+                try:
+                    torrent_by_inode[os.lstat(tpath).st_ino] = t
+                except OSError:
+                    pass
+            elif os.path.isdir(tpath):
+                for ino, _, _ in walk_inodes(tpath):
+                    torrent_by_inode[ino] = t
+    except Exception:
+        pass
+
+    # Largest unique-to-library files (re-grab / delete-for-disk triage)
     print()
-    print('=== Largest unique files in library (top 15 by size) ===')
-    library_files: list[tuple[int, str]] = []
+    print('=== Largest unique files in library (top 20 by size) ===')
+    print('  ratio/seeded = the torrent backing this file; "-" = no torrent (orphan or manual add)')
+    print()
+    print(f'  {"size":>7}  {"":<3} {"ratio":>6}  {"seeded":>8}  path')
+    print(f'  {"-" * 7}  {"-" * 3} {"-" * 6}  {"-" * 8}  {"-" * 50}')
+    icons = {'safe': '✓', 'borderline': '~', 'risky': '✗'}
+    library_files: list[tuple[int, int, str]] = []
     for ino, paths in paths_per_inode.items():
         if any(category_of(p) in ('movies', 'tv-shows') for p in paths):
-            # Pick the canonical path inside movies/tv-shows for display
             display = next((p for p in paths if category_of(p) in ('movies', 'tv-shows')), paths[0])
-            library_files.append((inode_size[ino], display))
+            library_files.append((inode_size[ino], ino, display))
     library_files.sort(reverse=True)
-    for size, path in library_files[:15]:
+    for size, ino, path in library_files[:20]:
         short = path[len(DOWNLOADS) + 1 :]
-        print(f'  {gb(size):>6.2f}G  {short[:90]}')
+        t = torrent_by_inode.get(ino)
+        if t:
+            verdict = seed_verdict(t['uploadRatio'], t['secondsSeeding'])
+            icon = icons[verdict]
+            ratio_str = f'{t["uploadRatio"]:.2f}' if t['uploadRatio'] < 100 else '>99'
+            seeded = hours(t['secondsSeeding'])
+        else:
+            icon = '?'
+            ratio_str = '-'
+            seeded = '-'
+        print(f'  {gb(size):>6.2f}G  {icon:<3} {ratio_str:>6}  {seeded:>8}  {short[:60]}')
 
     # Seeding state
     print()
