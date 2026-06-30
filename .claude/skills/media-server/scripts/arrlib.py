@@ -18,6 +18,20 @@ SCENE_KEYWORDS = (
 )
 
 
+# Transmission runs in a container and reports container-relative paths
+# (`/downloads/...`) via RPC. Scripts that stat files on the host need
+# this translation.
+HOST_DOWNLOADS = '/var/lib/transmission-daemon/downloads'
+CONTAINER_DOWNLOADS = '/downloads'
+
+
+def to_host_path(p: str) -> str:
+    """Convert a Transmission-reported container path to the host filesystem path."""
+    if p.startswith(CONTAINER_DOWNLOADS + '/') or p == CONTAINER_DOWNLOADS:
+        return HOST_DOWNLOADS + p[len(CONTAINER_DOWNLOADS):]
+    return p
+
+
 def normalize(s: str) -> str:
     """Lowercase + alphanumeric-only, for fuzzy title overlap comparison."""
     return re.sub(r'[^a-z0-9]', '', s.lower())

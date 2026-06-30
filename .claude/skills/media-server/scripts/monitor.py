@@ -14,8 +14,14 @@ import os
 import random
 from datetime import datetime
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from arrlib import to_host_path  # noqa: E402
+
 QUIET = "--quiet" in sys.argv
 LOG_FILE = "/opt/arr/monitor.log"
+
+# Only spot-check video files; .nfo / .png / sample artifacts are noise.
+VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts')
 
 issues = []
 ok_msgs = []
@@ -71,8 +77,13 @@ else:
 URL = "http://192.168.1.28:9091/transmission/rpc"
 USER, PASS = "transmission", os.environ.get("TRANSMISSION_PASS", "")
 if not PASS:
+    # Don't proceed; subsequent requests would fail with 401 and add a
+    # misleading "unreachable" issue on top of the real cause.
     issues.append("Transmission: TRANSMISSION_PASS env var not set")
+    PASS = None
 try:
+    if PASS is None:
+        raise RuntimeError("skipped: no TRANSMISSION_PASS")
     handler = urllib.request.HTTPPasswordMgrWithDefaultRealm()
     handler.add_password(None, URL, USER, PASS)
     opener = urllib.request.build_opener(urllib.request.HTTPBasicAuthHandler(handler))
@@ -91,7 +102,7 @@ try:
         with opener.open(req, timeout=10) as r:
             return json.loads(r.read())["arguments"]
 
-    result = rpc("torrent-get", {"fields": ["id", "name", "errorString", "downloadDir", "files"]})
+    result = rpc("torrent-get", {"fields": ["id", "name", "errorString", "downloadDir", "files", "percentDone"]})
     torrents = result.get("torrents", [])
 
     errored = [t for t in torrents if t.get("errorString", "").strip()]
@@ -103,22 +114,32 @@ try:
     else:
         ok_msgs.append(f"Transmission: {len(torrents)} torrents, none errored")
 
-    # Spot-check hardlink integrity — sample 5 random torrent files
-    sample_torrents = random.sample(torrents, min(5, len(torrents)))
+    # Spot-check hardlink integrity — sample completed torrents and verify
+    # their first VIDEO file exists. Translate container paths (Transmission's
+    # view) to host paths (where this script can stat them). Without these
+    # filters/translations the check was always false-positive: random PNG
+    # samples appeared "missing" because the path wasn't translated, and even
+    # if it were, screenshots aren't worth alerting on.
+    completed = [t for t in torrents if t.get("percentDone", 0) >= 1.0]
+    sample_torrents = random.sample(completed, min(5, len(completed)))
     missing = []
     for t in sample_torrents:
-        for f in t.get("files", [])[:1]:  # just check first file of each
-            full_path = os.path.join(t["downloadDir"], f["name"])
-            if not os.path.exists(full_path):
-                missing.append(f"{t['name']}: missing {f['name']}")
+        video_files = [f for f in t.get("files", []) if f["name"].lower().endswith(VIDEO_EXTS)]
+        if not video_files:
+            continue
+        first = video_files[0]
+        full_path = to_host_path(os.path.join(t["downloadDir"], first["name"]))
+        if not os.path.exists(full_path):
+            missing.append(f"{t['name']}: missing {first['name']}")
     if missing:
         for m in missing:
             issues.append(f"Hardlink check: {m}")
     else:
-        ok_msgs.append("Hardlink spot-check: 5 sampled torrent files present")
+        ok_msgs.append(f"Hardlink spot-check: {len(sample_torrents)} sampled torrents have video file present")
 
 except Exception as e:
-    issues.append(f"Transmission: unreachable — {e}")
+    if PASS is not None:
+        issues.append(f"Transmission: unreachable — {e}")
 
 # Report
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

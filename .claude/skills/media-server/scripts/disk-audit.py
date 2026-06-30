@@ -30,21 +30,10 @@ import urllib.request
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import normalize, parse_title_year  # noqa: E402
+from arrlib import normalize, parse_title_year, to_host_path  # noqa: E402
 
 DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CATEGORIES = ['movies', 'tv-shows', 'radarr', 'tv-sonarr']
-
-# Transmission runs in a container and reports container-relative paths
-# (`/downloads/...`) via RPC. Map them to host paths.
-CONTAINER_DOWNLOADS = '/downloads'
-
-
-def to_host_path(p: str) -> str:
-    """Convert a Transmission-reported container path to the host filesystem path."""
-    if p.startswith(CONTAINER_DOWNLOADS + '/') or p == CONTAINER_DOWNLOADS:
-        return DOWNLOADS + p[len(CONTAINER_DOWNLOADS) :]
-    return p
 
 # Seed-policy thresholds — IPTorrents-style: ratio >= 1.0 OR seeded >= 72h
 SEED_RATIO_TARGET = 1.0

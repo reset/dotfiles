@@ -13,6 +13,9 @@ Usage:
 
 import urllib.request, urllib.error, json, os, sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from arrlib import to_host_path  # noqa: E402
+
 DRY_RUN = '--dry-run' in sys.argv
 
 TRANSMISSION_URL  = 'http://localhost:9091/transmission/rpc'
@@ -20,6 +23,10 @@ TRANSMISSION_USER = 'transmission'
 TRANSMISSION_PASS = os.environ.get('TRANSMISSION_PASS', '')
 if not TRANSMISSION_PASS:
     sys.exit('TRANSMISSION_PASS env var not set; see ~/.claude/skills/media-server/skill.md for setup')
+
+# Video extensions — only these are worth restoring; we don't care about
+# resurrecting .nfo / .png / sample files.
+VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts')
 SEARCH_ROOTS = [
     '/var/lib/transmission-daemon/downloads/tv-shows',
     '/var/lib/transmission-daemon/downloads/movies',
@@ -52,19 +59,24 @@ for root in SEARCH_ROOTS:
 print(f'  {len(index)} unique filenames indexed')
 
 # ── Find missing torrent files ───────────────────────────────────────
+# Only consider completed torrents — an in-progress download has files
+# that legitimately don't exist yet on disk, and "repairing" them via
+# hardlink from a same-named file in the library would corrupt the seed.
 print('Scanning Transmission torrents...')
-data = rpc('torrent-get', {'fields': ['name', 'downloadDir', 'files']})
-torrents = data['torrents']
+data = rpc('torrent-get', {'fields': ['name', 'downloadDir', 'files', 'percentDone']})
+torrents = [t for t in data['torrents'] if t.get('percentDone', 0) >= 1.0]
 
 missing = []
 for t in torrents:
-    dl = t['downloadDir'].rstrip('/')
+    dl = to_host_path(t['downloadDir'].rstrip('/'))
     for f in t['files']:
-        path = f'{dl}/{f["name"]}'
+        if not f['name'].lower().endswith(VIDEO_EXTS):
+            continue  # don't try to restore .nfo / sample / screenshot files
+        path = os.path.join(dl, f['name'])
         if not os.path.exists(path):
             missing.append((t['name'], path, os.path.basename(f['name'])))
 
-print(f'  {len(missing)} missing files across {len(torrents)} torrents')
+print(f'  {len(missing)} missing video files across {len(torrents)} completed torrents')
 
 if not missing:
     print('\nAll torrent files present — seeding is healthy.')
