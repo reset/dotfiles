@@ -394,6 +394,8 @@ curl -sf -X POST http://192.168.1.28:8096/Library/Refresh -H "X-Emby-Token: $JF_
 
 **Before doing anything that "frees" space, run `/opt/arr/disk-audit.py`.** It reports the honest numbers — per-category "unique" bytes (what you'd really reclaim) vs "shared" bytes (hardlinked, deleting one path frees zero). Also surfaces true orphans (staging dirs no torrent holds), largest unique-to-library files, and current seed ratio. Read-only — no mutation.
 
+**Before removing torrents, run `/opt/arr/disk-audit.py --seed-status`.** Per-torrent verdict (`safe` / `borderline` / `risky`) against IPTorrents-style targets (ratio ≥ 1.0 OR seeded ≥ 72h, whichever first). Cumulative-ratio panic isn't the right lens; what matters is whether each individual torrent has paid its dues.
+
 Two things you can actually reclaim:
 1. **Genuine orphans** — folders in staging that Transmission isn't tracking. Usually unpackerr leftovers (root-owned RAR extracts the torrent removal couldn't delete). The audit tool flags these explicitly.
 2. **Big unique files** — oversized movies/episodes you'd re-grab at smaller quality. Library-side; doesn't touch seeding.
