@@ -468,7 +468,7 @@ ssh reset@192.168.1.28 "du -sh /var/lib/transmission-daemon/downloads/tv-shows/*
 
 | ID | Name | Allowed | Notes |
 |----|------|---------|-------|
-| 4 | HD-1080p | HDTV-1080p, WEB 1080p | Default. Bluray-1080p intentionally removed (runs 6–15G). |
+| 4 | HD-1080p | HDTV-1080p, WEB 1080p, Bluray-1080p | Default. Bluray-1080p included — older catalog films often only exist as Bluray rips. The "Too Large" custom format (-10000) auto-rejects BR-DISK/Remux behemoths. |
 | 5 | Ultra-HD | HDTV-2160p, WEB 2160p, Bluray-2160p | Remux-2160p and BR-DISK intentionally removed (50–80G). |
 
 **Sonarr (TV):**
@@ -496,7 +496,7 @@ for m in json.load(sys.stdin):
 
 ### Auditing oversized files
 
-**Movies with Bluray-1080p files** (these were grabbed before Bluray-1080p was removed from the profile):
+**Movies with Bluray-1080p files** (Bluray-1080p is allowed in the profile, but the largest rips are worth auditing — use the "Too Large" custom format score and file size to triage):
 
 ```bash
 RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
