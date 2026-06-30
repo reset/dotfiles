@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+#
+# deploy — sync the media-server scripts from this directory to /opt/arr/
+# on the home server. Idempotent. Skips _test.py files (tests are local-only).
+#
+# Usage:
+#   ./deploy           # sync + verify + print monitor.py output
+#   ./deploy --quiet   # sync + verify only
+#
+set -euo pipefail
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REMOTE_HOST="reset.dev"
+readonly REMOTE_DIR="/opt/arr"
+
+QUIET=0
+[[ "${1:-}" == "--quiet" ]] && QUIET=1
+
+say() { [[ "$QUIET" == 0 ]] && echo >&2 "$@"; }
+
+# Files to deploy (excludes *_test.py and this deploy script itself).
+files=()
+while IFS= read -r f; do
+    case "$f" in
+        *_test.py|deploy) continue ;;
+        *.py) files+=("$f") ;;
+    esac
+done < <(ls "$SCRIPT_DIR")
+
+if [[ ${#files[@]} -eq 0 ]]; then
+    echo >&2 "Error: no .py files found in $SCRIPT_DIR"
+    exit 1
+fi
+
+# Run tests locally before deploying — the tools-engineer rule is
+# "fail fast on the developer machine, never push known-broken to prod."
+say "Running test suites..."
+for test_file in "$SCRIPT_DIR"/*_test.py; do
+    [[ -e "$test_file" ]] || continue
+    if ! (cd "$SCRIPT_DIR" && python3 "$(basename "$test_file")" >/dev/null 2>&1); then
+        echo >&2 "Test FAILED: $(basename "$test_file")"
+        (cd "$SCRIPT_DIR" && python3 "$(basename "$test_file")") >&2
+        exit 1
+    fi
+done
+say "  all tests pass"
+
+# Stage to /tmp on the remote, then sudo mv into place with the right perms.
+# Done in one ssh session to avoid per-file round trips.
+say "Syncing ${#files[@]} files to $REMOTE_HOST:$REMOTE_DIR/ ..."
+
+# Tar over ssh — survives whitespace in paths and is a single network call.
+# COPYFILE_DISABLE=1 stops macOS bsdtar from writing AppleDouble (._foo)
+# sidecars into the archive for extended attributes.
+COPYFILE_DISABLE=1 tar -czf - -C "$SCRIPT_DIR" "${files[@]}" 2>/dev/null \
+    | ssh "$REMOTE_HOST" "set -e
+        tmpdir=\$(mktemp -d)
+        tar -xzf - -C \"\$tmpdir\" 2>/dev/null
+        for f in $(printf '%q ' "${files[@]}"); do
+            sudo mv \"\$tmpdir/\$f\" \"$REMOTE_DIR/\$f\"
+            sudo chmod +x \"$REMOTE_DIR/\$f\"
+        done
+        rm -rf \"\$tmpdir\"
+    "
+
+say "  done"
+
+if [[ "$QUIET" == 0 ]]; then
+    say ""
+    say "Post-deploy verification — running monitor.py on the server:"
+    ssh "$REMOTE_HOST" "TRANSMISSION_PASS=media-server python3 $REMOTE_DIR/monitor.py 2>&1 | tail -10"
+fi

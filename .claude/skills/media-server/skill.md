@@ -137,7 +137,9 @@ Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed 
 | `/opt/arr/fix-seeding.py` | Restore hardlinks for files Sonarr/Radarr moved instead of hardlinked | Manual when seeding shows error |
 | `/opt/arr/monitor.py` | *arr health check, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
 
-**Redeploy to a new server**: copy each file from `~/.claude/skills/media-server/scripts/` to `/opt/arr/`, `chmod +x`. The monitor cron lives at `/etc/cron.d/arr-monitor` — recreate that separately.
+**Sync local edits to the server**: run `~/.claude/skills/media-server/scripts/deploy`. It runs all local tests, tars the `.py` files (excluding `*_test.py`) over ssh to `reset.dev`, places them in `/opt/arr/` with `+x`, and runs `monitor.py` on the box as a post-deploy verification. Fails closed if any test fails.
+
+**Redeploy to a new server**: same `deploy` script works as long as `ssh reset.dev` resolves to the new host. The monitor cron at `/etc/cron.d/arr-monitor` is NOT managed by `deploy` — recreate that separately on a fresh box.
 
 **Credentials**: the tracked copies of `fix-seeding.py` and `monitor.py` read the Transmission password from `$TRANSMISSION_PASS` (sanitized for the public-treat-as dotfiles repo). On the server, this needs to be set:
 - For the cron entry: `TRANSMISSION_PASS=...` in `/etc/cron.d/arr-monitor` (one line above the schedule)
