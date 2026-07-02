@@ -10,7 +10,7 @@
 
 ## One More Game Context
 - Small remote studio
-- Jira project keys: SWAPMEAT (`SMD`), Spellcraft (`rog`)
+- Jira project keys: SWAPMEAT (`SMD`), Spellcraft (`TAP`)
 - Uses Ramp for spend, Gusto for payroll, WTIA for group health benefits
 - Fractional CFO: Jim Garbarini (Financial Works Inc.)
 - Benefits broker: Jodi Hensley (Pro Benefits WA)
