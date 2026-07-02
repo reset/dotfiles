@@ -17,6 +17,6 @@ for _nix_direnv in \
 done
 if [[ "${_nix_direnv_loaded}" -eq 0 ]]; then
   echo >&2 "direnv: nix-direnv not found — dev shell loads will be slow."
-  echo >&2 "  install: nix-env -iA nixpkgs.nix-direnv"
+  echo >&2 "  install: nix profile install nixpkgs#nix-direnv"
 fi
 unset _nix_direnv _nix_direnv_loaded
