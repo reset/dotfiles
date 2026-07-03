@@ -100,6 +100,17 @@ function setup_home () {
   if [[ ! -d "$ZSH_CUSTOM/themes/powerlevel10k" ]]; then
     git clone https://github.com/romkatv/powerlevel10k.git "$ZSH_CUSTOM/themes/powerlevel10k"
   fi
+
+  # Install burn-disc (private repo; SSH clone needs the key from the manual
+  # bootstrap steps). Build the binary the ~/bin/burn-disc shim execs.
+  if [[ ! -d "$HOME/code/burn-disc" ]]; then
+    mkdir -p "$HOME/code"
+    if git clone git@github.com:reset/burn-disc.git "$HOME/code/burn-disc"; then
+      make -C "$HOME/code/burn-disc" publish || echo >&2 "burn-disc: build failed — run 'make -C ~/code/burn-disc publish' after the .NET SDK is installed"
+    else
+      echo >&2 "burn-disc: clone failed (SSH key set up?) — clone git@github.com:reset/burn-disc.git into ~/code/burn-disc, then 'make publish'"
+    fi
+  fi
 }
 
 #
