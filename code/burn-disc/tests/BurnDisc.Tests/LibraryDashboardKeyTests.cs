@@ -111,6 +111,16 @@ public sealed class LibraryDashboardKeyTests {
     }
 
     [Fact]
+    public void E_TriggersEject() {
+        LibraryDashboard dashboard = Seeded();
+        Assert.False(dashboard.EjectingForTest);
+
+        dashboard.HandleKeyForTest(Char('e'));
+
+        Assert.True(dashboard.EjectingForTest);
+    }
+
+    [Fact]
     public void CtrlC_WhileBrowsing_Quits() {
         LibraryDashboard dashboard = Seeded();
         dashboard.HandleKeyForTest(CtrlC());

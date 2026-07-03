@@ -54,6 +54,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private Task? m_driveScan;
     private Task? m_burnTask;
     private LibraryItem? m_pendingBurn; // awaiting non-blank-disc confirmation
+    private Task? m_ejectTask;
+    private bool m_ejecting;
 
     public LibraryDashboard(
         ILibraryScanner scanner, IDriveScanner driveScanner, IImagePreparer preparer,
@@ -99,6 +101,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                         m_visibleRows = Math.Max(3, TerminalHeight() - 8);
                         HandleKeys();
                         AdoptServerScan();
+                        AdoptEject();
                         ctx.UpdateTarget(BuildFrame());
                         ctx.Refresh();
                         try {
@@ -209,6 +212,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     internal bool InConfirmBurnForTest { get { lock (m_sync) { return m_mode == EMode.ConfirmBurn; } } }
     internal bool InBurningForTest { get { lock (m_sync) { return m_mode == EMode.Burning; } } }
     internal bool QuitRequestedForTest => m_quit;
+    internal bool EjectingForTest => m_ejecting;
     internal int CursorForTest => m_cursor;
     internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
     internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
@@ -275,6 +279,9 @@ internal sealed partial class LibraryDashboard : IProgressScope {
             case '/':
                 SetMode(EMode.Search);
                 break;
+            case 'e':
+                StartEject();
+                break;
             case 'q':
                 SetMode(EMode.ConfirmQuit);
                 break;
@@ -319,6 +326,31 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     //
     // Burn
     //
+    // Eject the disc (drutil unmounts and opens the tray), then re-scan so the
+    // drive line reflects the now-empty drive. Runs off the loop; ignored if an
+    // eject is already in flight.
+    private void StartEject() {
+        if (m_ejectTask is not null) {
+            return;
+        }
+        m_ejecting = true;
+        m_ejectTask = Task.Run(async () => {
+            try {
+                _ = await m_processRunner.RunAsync("drutil", ["eject"]).ConfigureAwait(false);
+                m_drive = await m_driveScanner.ScanAsync().ConfigureAwait(false);
+            } catch {
+                // Eject is best-effort; a failure just leaves the drive line as-is.
+            }
+        });
+    }
+
+    private void AdoptEject() {
+        if (m_ejectTask is { IsCompleted: true }) {
+            m_ejecting = false;
+            m_ejectTask = null;
+        }
+    }
+
     // Burning onto a non-blank disc is a guaranteed coaster, so confirm first.
     private void RequestBurn(LibraryItem item) {
         if (m_drive?.IsBlank == false) {
@@ -487,7 +519,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private string StatusLine(int localCount, int serverCount, bool serverLoading, EMode mode) {
         string server = serverLoading ? "[yellow]scanning server…[/]" : $"{serverCount} server";
         string library = $"[grey]Library[/]  [green]{localCount} local[/]  {server}";
-        string drive = m_drive is { } d ? $"   [grey]·[/]  {Markup.Escape(d.DisplayName)}  [grey]{Markup.Escape(d.MediaSummary)}[/]" : "";
+        string driveState = m_ejecting ? "[yellow]ejecting…[/]" : m_drive is { } d ? $"[grey]{Markup.Escape(d.MediaSummary)}[/]" : "";
+        string drive = m_drive is { } dd ? $"   [grey]·[/]  {Markup.Escape(dd.DisplayName)}  {driveState}" : m_ejecting ? $"   [grey]·[/]  {driveState}" : "";
         if (mode == EMode.Search) {
             return $"[grey]Search[/]  {Markup.Escape(m_filter)}[blink]▌[/]";
         }
@@ -571,7 +604,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
         EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
         EMode.ConfirmBurn => "[yellow]! Disc is not blank — burn will likely coaster.[/]  [[y]] burn anyway   [[n]] cancel",
-        _ => "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[q]] quit[/]"
+        _ => "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[e]] eject  [[q]] quit[/]"
     };
 
     private static List<IRenderable> PadTo(List<IRenderable> lines, int target) {

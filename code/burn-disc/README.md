@@ -13,8 +13,9 @@ burn-disc [<file>] [--speed N] [--dry-run]
 Run with **no arguments** to open the full-screen library browser: it scans
 the local library (`~/roms`, override with `LIBRARY_PATH`) and the media
 server (`MEDIA_HOST`/`MEDIA_PATH`), and lets you navigate with vim keys
-(`j/k`, `u/d`, `gg`, `G`), filter with `/`, and burn the selected title with
-`Enter` — server titles download first. All progress renders live in-frame.
+(`j/k`, `u/d`, `gg`, `G`), filter with `/`, burn the selected title with
+`Enter` (server titles download first), and eject with `e`. All progress
+renders live in-frame.
 
 Or pass a file to burn it directly:
 
