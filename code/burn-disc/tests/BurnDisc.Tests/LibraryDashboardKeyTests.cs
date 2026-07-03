@@ -118,6 +118,13 @@ public sealed class LibraryDashboardKeyTests {
     }
 
     [Fact]
+    public void Escape_MirrorsQ_PromptingQuitConfirm() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.HandleKeyForTest(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, shift: false, alt: false, control: false));
+        Assert.True(dashboard.InConfirmQuitForTest);
+    }
+
+    [Fact]
     public void CtrlC_WhileBurning_IsIgnored() {
         LibraryDashboard dashboard = Seeded();
         dashboard.EnterBurningModeForTest();

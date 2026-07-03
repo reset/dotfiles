@@ -26,10 +26,23 @@ internal sealed partial class DriveScanner : IDriveScanner {
         } catch (ProcessException) {
             return null; // drutil unavailable (non-macOS, etc.) — not fatal
         }
-        return ParseDrutilStatus(result.Output);
+
+        // If a written disc is loaded, macOS mounts it — read its volume label
+        // so we can show what the disc actually contains (e.g. "FINAL_FIGHT").
+        string? volumeLabel = null;
+        if (ParseDeviceNode(result.Output) is { } device) {
+            try {
+                ProcessResult mount = await m_processRunner.RunAsync("mount", [], cancellationToken: cancellationToken).ConfigureAwait(false);
+                volumeLabel = ExtractVolumeLabel(mount.Output, device);
+            } catch (ProcessException) {
+                // mount unavailable — the label is a nicety, not required
+            }
+        }
+
+        return ParseDrutilStatus(result.Output, volumeLabel);
     }
 
-    public static OpticalDrive? ParseDrutilStatus(string text) {
+    public static OpticalDrive? ParseDrutilStatus(string text, string? volumeLabel = null) {
         string[] lines = text.Split('\n');
 
         // The vendor/product/rev row is the line immediately after the header row.
@@ -80,7 +93,25 @@ internal sealed partial class DriveScanner : IDriveScanner {
             isBlank = usedBytes == 0;
         }
 
-        return new OpticalDrive(vendor, product, mediaType, speeds, isBlank, usedBytes);
+        return new OpticalDrive(vendor, product, mediaType, speeds, isBlank, usedBytes, volumeLabel);
+    }
+
+    // The drive's device node from drutil's "Name: /dev/diskN" line.
+    public static string? ParseDeviceNode(string drutilText) {
+        Match m = DeviceNode().Match(drutilText);
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    // The first mounted volume name for the given device, from `mount` output
+    // (lines like "/dev/disk4s0 on /Volumes/FINAL_FIGHT (cd9660, ...)").
+    public static string? ExtractVolumeLabel(string mountOutput, string deviceNode) {
+        foreach (string line in mountOutput.Split('\n')) {
+            Match m = MountLine().Match(line);
+            if (m.Success && m.Groups[1].Value.StartsWith(deviceNode, StringComparison.Ordinal)) {
+                return m.Groups[2].Value.Trim();
+            }
+        }
+        return null;
     }
 
     [GeneratedRegex(@"\s{2,}")]
@@ -100,4 +131,10 @@ internal sealed partial class DriveScanner : IDriveScanner {
 
     [GeneratedRegex(@"Writability:\s*(.+)")]
     private static partial Regex WritabilityLine();
+
+    [GeneratedRegex(@"Name:\s*(/dev/\S+)")]
+    private static partial Regex DeviceNode();
+
+    [GeneratedRegex(@"^(\S+) on /Volumes/(.+?) \(")]
+    private static partial Regex MountLine();
 }

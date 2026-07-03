@@ -238,6 +238,9 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                     RequestBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
                 }
                 return;
+            case ConsoleKey.Escape:
+                SetMode(EMode.ConfirmQuit); // Escape mirrors 'q'
+                return;
             default:
                 break;
         }

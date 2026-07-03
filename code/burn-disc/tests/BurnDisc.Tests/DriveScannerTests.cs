@@ -59,4 +59,27 @@ public sealed class DriveScannerTests {
     public void ParseDrutilStatus_ReturnsNull_WhenNoDriveReported() {
         Assert.Null(DriveScanner.ParseDrutilStatus("Warning: No drives found\n"));
     }
+
+    [Fact]
+    public void ParseDeviceNode_ReadsNameLine() {
+        Assert.Equal("/dev/disk4", DriveScanner.ParseDeviceNode(DrutilUsedCdr));
+    }
+
+    [Fact]
+    public void ExtractVolumeLabel_FindsMountedVolumeForDevice() {
+        const string mount = """
+            /dev/disk3s1 on / (apfs, local, read-only, journaled)
+            /dev/disk4s0 on /Volumes/FINAL_FIGHT (cd9660, local, nodev, nosuid, read-only, noowners)
+            /dev/disk4 on /Volumes/Final Fight CD (cddafs, local, nodev, nosuid, read-only, noowners)
+            """;
+        Assert.Equal("FINAL_FIGHT", DriveScanner.ExtractVolumeLabel(mount, "/dev/disk4"));
+        Assert.Null(DriveScanner.ExtractVolumeLabel(mount, "/dev/disk9"));
+    }
+
+    [Fact]
+    public void MediaSummary_IncludesVolumeLabel_WhenPresent() {
+        OpticalDrive drive = DriveScanner.ParseDrutilStatus(DrutilUsedCdr, "FINAL_FIGHT")!;
+        Assert.Contains("FINAL_FIGHT", drive.MediaSummary);
+        Assert.Equal("FINAL_FIGHT", drive.VolumeLabel);
+    }
 }
