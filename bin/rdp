@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# rdp — RDP to a home box by forwarding the RDP port through `ssh`.
+# Targets are SSH host aliases in ~/.ssh/config (LAN-direct or via the
+# Cloudflare Access tunnel, whichever that alias resolves to). Launches
+# the Windows App against the local forward and tears it down on exit.
+# Usage: rdp <omg|media>
+set -euo pipefail
+
+usage () {
+  cat >&2 <<'EOF'
+Usage: rdp <target>
+
+  omg     the workstation         (RDP / gnome-remote-desktop)
+  media   the media/build server  (RDP / xrdp)
+
+Targets map to SSH host aliases (see ~/.ssh/config). Opens a port-forward
+over Cloudflare Access, launches Windows App against localhost, and closes
+the tunnel on Ctrl-C.
+EOF
+  exit 1
+}
+
+[[ $# -eq 1 ]] || usage
+
+readonly rdp_user="reset"
+readonly remote_port=3389
+
+# Targets are SSH host aliases resolved from the (untracked) ~/.ssh/config,
+# so no real hostnames live in this tracked script.
+target="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+case "$target" in
+  omg|workstation) ssh_host="omg"   ; local_port=13389 ;;
+  media|build)     ssh_host="media" ; local_port=13390 ;;
+  *) echo >&2 "rdp: unknown target '$1'" ; usage ;;
+esac
+
+if lsof -iTCP:"$local_port" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo >&2 "rdp: localhost:$local_port already in use — a tunnel may already be open."
+  echo >&2 "     Point the client at localhost:$local_port, or free the port and retry."
+  exit 1
+fi
+
+rdp_file="${TMPDIR:-/tmp}/rdp-${target}-$$.rdp"
+ssh_pid=""
+cleanup () {
+  [[ -n "$ssh_pid" ]] && kill "$ssh_pid" 2>/dev/null || true
+  rm -f "$rdp_file"
+  echo
+  echo "Tunnel closed."
+}
+trap cleanup EXIT
+
+echo "Opening Cloudflare-tunneled forward: localhost:$local_port -> $ssh_host:$remote_port ..."
+ssh -N -o ExitOnForwardFailure=yes -L "$local_port:localhost:$remote_port" "$ssh_host" &
+ssh_pid=$!
+
+# Wait up to ~30s for the forward (first hop may need Cloudflare Access auth).
+up=""
+for _ in $(seq 1 60); do
+  if lsof -iTCP:"$local_port" -sTCP:LISTEN >/dev/null 2>&1; then up=1; break; fi
+  kill -0 "$ssh_pid" 2>/dev/null || break   # ssh exited
+  sleep 0.5
+done
+if [[ -z "$up" ]]; then
+  echo >&2 "rdp: tunnel didn't come up (SSH or Cloudflare Access failed)."
+  exit 1
+fi
+
+printf 'full address:s:localhost:%s\nusername:s:%s\n' "$local_port" "$rdp_user" > "$rdp_file"
+echo "Launching Windows App -> localhost:$local_port (user: $rdp_user)"
+open -a "Windows App" "$rdp_file"
+
+echo "Connected through Cloudflare. Leave this running; press Ctrl-C to disconnect."
+wait "$ssh_pid"
