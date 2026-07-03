@@ -16,7 +16,7 @@ archive extraction → format detection → CHD/CCD conversion → burning via c
 ~/bin/burn-disc '<path>' [--speed N] [--dry-run]
 ```
 
-`~/bin/burn-from-server` searches the media server, picks a file interactively, downloads it, and burns it end-to-end. Requires Homebrew rsync (`brew install rsync`) — macOS system rsync is too old for `--protect-args`, which is needed for paths containing spaces or parentheses (common in game filenames).
+`~/bin/burn-from-server` searches for an image by name, picks one interactively, and burns it end-to-end. It checks the local library first (`LIBRARY_PATH`, default `~/roms`) and burns any local match straight from disk; only if nothing matches locally does it fall back to the media server, downloading the chosen file before burning. Results are tagged `[local]`/`[server]` in the picker so the source is obvious. The server-download path requires Homebrew rsync (`brew install rsync`) — macOS system rsync is too old for `--protect-args`, which is needed for paths containing spaces or parentheses (common in game filenames).
 
 ```
 ~/bin/burn-from-server '<query>' [--speed N] [--dry-run]
