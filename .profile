@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-ulimit -n unlimited
+# Raise the open-file soft limit to the hard max. macOS allows "unlimited";
+# unprivileged Linux users can't, so target the hard cap and never fail loudly.
+ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 
 export EDITOR=vim
 export GITHUB_USER="reset"
@@ -14,8 +16,10 @@ export OMG_CONFIG_PATH="$HOME/.config/omg"
 
 # Skip running in VSCode devcontainer
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
-  if [ -z "$(pgrep gpg-agent)" ]; then
-    eval "$(gpg-agent --daemon)"
+  # On systemd Linux the user session already runs gpg-agent; silence its
+  # "already running" / first-run notices so login stays clean on both OSes.
+  if [ -z "$(pgrep -u "$USER" gpg-agent)" ]; then
+    eval "$(gpg-agent --daemon 2>/dev/null)" 2>/dev/null || true
   fi
 
   # Start ssh-agent if it isn't running
@@ -25,7 +29,9 @@ if [ -z "${REMOTE_CONTAINERS+x}" ]; then
       # Launch a new instance of the agent
       ssh-agent -s &>"$SSH_AGENT"
     fi
-    eval "$(cat "$SSH_AGENT")" &>/dev/null
+    # Only load it if the agent file actually exists (an existing agent may mean
+    # it was never written), so a missing file doesn't error on login.
+    [ -f "$SSH_AGENT" ] && eval "$(cat "$SSH_AGENT")" &>/dev/null
   fi
 
   # Add ssh keys to ssh-agent
