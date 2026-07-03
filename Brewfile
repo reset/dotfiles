@@ -1,6 +1,6 @@
-tap "jaxxstorm/tap"
-
-# CLI tools
+# Cross-platform CLI tools — installed via Homebrew on both macOS and Linux.
+# macOS-only formulae, GUI casks, and Mac App Store apps are guarded below so
+# `brew bundle` stays clean on a Linux host (linuxbrew).
 brew "awscli"
 brew "azure-cli"
 brew "bash"
@@ -8,7 +8,6 @@ brew "binutils"
 brew "cdrdao"
 brew "cloc"
 brew "cloudflared"
-brew "colima"
 brew "consul"
 brew "coreutils"
 brew "direnv"
@@ -22,12 +21,9 @@ brew "gnupg"
 brew "go"
 brew "imagemagick"
 brew "jq"
-brew "mas"
 brew "maven"
 brew "p7zip"
-brew "pinentry-mac"
 brew "pkgconf"
-brew "reattach-to-user-namespace"
 brew "rsync"
 brew "ruby"
 brew "rust"
@@ -39,47 +35,64 @@ brew "tmux"
 brew "transmission-cli"
 brew "weechat"
 brew "zsh"
-brew "jaxxstorm/tap/aws-sso-creds"
 
-# GUI apps
-cask "1password"
-cask "1password-cli"
-cask "ghostty"
-cask "alfred"
-cask "brave-browser"
-cask "claude"
-cask "claude-code"
-cask "crossover"
-cask "deckset"
-cask "discord"
-cask "docker-desktop"
-cask "dotnet-sdk"
-cask "dropbox"
-cask "font-fira-code"
-cask "go-agent"
-cask "google-chrome"
-cask "google-drive"
-cask "keybase"
-cask "nordvpn"
-cask "notable"
-cask "obs"
-cask "p4"
-cask "p4v"
-cask "postman"
-cask "rar"
-cask "slack"
-cask "steam"
-cask "telegram"
-cask "unity-hub"
-cask "visual-studio-code"
-cask "vlc"
-cask "whatsapp"
-cask "zoom"
+# Linux-only formulae
+if OS.linux?
+  # macOS uses pinentry-mac; Linux uses the standard pinentry. install_symlinks
+  # links $HOMEBREW_PREFIX/bin/pinentry into /usr/local/bin on both.
+  brew "pinentry"
+end
 
-# Mac App Store
-mas "1Password for Safari", id: 1569813296
-mas "Final Cut Pro", id: 424389933
-mas "Color Picker", id: 1545870783
-mas "Magnet", id: 441258766
-mas "Microsoft Excel", id: 462058435
-mas "Windows App", id: 1295203466
+# macOS-only: formulae with no useful Linux counterpart, GUI casks, Mac App Store.
+if OS.mac?
+  tap "jaxxstorm/tap"
+
+  brew "colima"                       # Docker runtime for macOS; Linux runs Docker native
+  brew "mas"                          # Mac App Store CLI
+  brew "pinentry-mac"                 # GUI pinentry for macOS
+  brew "reattach-to-user-namespace"   # tmux clipboard bridge, macOS-only
+  brew "jaxxstorm/tap/aws-sso-creds"
+
+  # GUI apps
+  cask "1password"
+  cask "1password-cli"
+  cask "ghostty"
+  cask "alfred"
+  cask "brave-browser"
+  cask "claude"
+  cask "claude-code"
+  cask "crossover"
+  cask "deckset"
+  cask "discord"
+  cask "docker-desktop"
+  cask "dotnet-sdk"
+  cask "dropbox"
+  cask "font-fira-code"
+  cask "go-agent"
+  cask "google-chrome"
+  cask "google-drive"
+  cask "keybase"
+  cask "nordvpn"
+  cask "notable"
+  cask "obs"
+  cask "p4"
+  cask "p4v"
+  cask "postman"
+  cask "rar"
+  cask "slack"
+  cask "steam"
+  cask "telegram"
+  cask "unity-hub"
+  cask "visual-studio-code"
+  cask "vlc"
+  cask "whatsapp"
+  cask "zoom"
+
+  # Mac App Store
+  mas "1Password for Safari", id: 1569813296
+  mas "Final Cut Pro", id: 424389933
+  mas "Color Picker", id: 1545870783
+  mas "Magnet", id: 441258766
+  mas "Microsoft Excel", id: 462058435
+  mas "Windows App", id: 1295203466
+end

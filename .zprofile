@@ -7,7 +7,8 @@ fi
 # After a brew upgrade zsh, the running tmux session still exports the old
 # versioned fpath entry (e.g. Cellar/zsh/5.9/…). Strip any stale versioned
 # entries and add the correct one for the current binary — upgrade-proof.
-fpath=( "${(@)fpath:#/opt/homebrew/Cellar/zsh/*/share/zsh/functions}" )
+# $HOMEBREW_PREFIX is exported by the brew shellenv eval above (differs by OS).
+fpath=( "${(@)fpath:#${HOMEBREW_PREFIX}/Cellar/zsh/*/share/zsh/functions}" )
 fpath+=( "${${commands[zsh]:A}:h:h}/share/zsh/functions" )
 
 emulate sh -c '. ~/.profile'

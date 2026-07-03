@@ -30,7 +30,11 @@ fi
 # Skip running in VSCode devcontainer
 if [ -z "${REMOTE_CONTAINERS+x}" ]; then
   # PS1="$PS1"'$([ -n "$TMUX" ] && tmux setenv TMUXPWD_$(tmux display -p "#D" | tr -d %) "$PWD")'
-  if [ "$TMUX" = "" ]; then tmux; fi
+  # Auto-launch tmux on an interactive workstation only. On the server
+  # (DOTFILES_PROFILE=server, set in the untracked ~/.config/omg/env) skip it —
+  # a server shell stays lean and doesn't spawn tmux or the macOS-only
+  # statusline widgets it drives.
+  if [ "${DOTFILES_PROFILE:-workstation}" != "server" ] && [ "$TMUX" = "" ]; then tmux; fi
 
   export AWS_DEFAULT_REGION="us-west-2"
   export GPG_TTY=$(tty)
@@ -45,7 +49,11 @@ eval "$(direnv hook zsh)"
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 # pnpm
-export PNPM_HOME="/Users/reset/Library/pnpm"
+if [[ $OSTYPE == 'darwin'* ]]; then
+  export PNPM_HOME="$HOME/Library/pnpm"
+else
+  export PNPM_HOME="$HOME/.local/share/pnpm"
+fi
 case ":$PATH:" in
   *":$PNPM_HOME/bin:"*) ;;
   *) export PATH="$PNPM_HOME/bin:$PATH" ;;

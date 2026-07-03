@@ -28,6 +28,12 @@ function install_homebrew () {
     curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
   fi
 
+  # The installer doesn't modify the current shell's environment, so put brew on
+  # PATH for the rest of this script on a fresh machine (both macOS and Linux).
+  if [[ -x "$HOMEBREW_PREFIX/bin/brew" ]]; then
+    eval "$("$HOMEBREW_PREFIX/bin/brew" shellenv)"
+  fi
+
   brew analytics off
 }
 
@@ -138,15 +144,24 @@ EOF
 
 
 function _install_packages_ubuntu () {
-  sudo apt-get update &&
-    sudo apt-get upgrade &&
-    sudo apt-get install -y \
-      build-essential \
-      curl \
-      fonts-firacode \
-      git \
-      git-repair \
-      gnutls-bin
+  echo "Installing Ubuntu system packages..."
+  sudo apt-get update
+  sudo apt-get upgrade -y
+  # System prerequisites: Homebrew-on-Linux build deps plus a few base tools not
+  # worth pulling through brew.
+  sudo apt-get install -y \
+    build-essential \
+    curl \
+    file \
+    fonts-firacode \
+    git \
+    git-repair \
+    gnutls-bin \
+    procps
+
+  # Cross-platform CLI tools via Homebrew — macOS-only entries in the Brewfile
+  # are guarded with `if OS.mac?`, so this installs only the shared set on Linux.
+  brew bundle install --file="$HOME/Brewfile"
 }
 
 install_homebrew
