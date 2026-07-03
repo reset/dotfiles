@@ -16,8 +16,9 @@ internal sealed class DashboardReporter : IProgressReporter {
         }
 
         Panel panel = new(grid) {
-            Header = new PanelHeader($"[bold]{Markup.Escape(title)}[/]"),
+            Header = new PanelHeader($"[bold {Theme.Header}]{Markup.Escape(title)}[/]"),
             Border = BoxBorder.Rounded,
+            BorderStyle = new Style(foreground: Theme.Border),
             Padding = new Padding(1, 0, 1, 0)
         };
         AnsiConsole.Write(panel);

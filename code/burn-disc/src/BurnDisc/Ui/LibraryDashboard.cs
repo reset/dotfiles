@@ -617,8 +617,9 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         rows.Add(new Markup(FooterLine(mode, m_selectedPlatform is null)));
 
         return new Panel(new Rows(rows)) {
-            Header = new PanelHeader("[bold]burn-disc[/]"),
+            Header = new PanelHeader($"[bold {Theme.Header}]burn-disc[/]"),
             Border = BoxBorder.Rounded,
+            BorderStyle = new Style(foreground: Theme.Border),
             Expand = true,
             Padding = new Padding(1, 0, 1, 0)
         };
@@ -743,15 +744,15 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     }
 
     private static string FooterLine(EMode mode, bool atPlatformList) => mode switch {
-        EMode.Search => "[grey][[type]] filter  [[enter]] apply  [[esc]] clear[/]",
-        EMode.Burning => "[grey]burning… please wait  ·  [[x]]/[[esc]] abort[/]",
+        EMode.Search => "[dim][[type]] filter  [[enter]] apply  [[esc]] clear[/]",
+        EMode.Burning => "[dim]burning… please wait  ·  [[x]]/[[esc]] abort[/]",
         EMode.ConfirmAbort => "[yellow]Abort burn? This ruins the disc.[/]  [[y]] yes   [[n]] no",
-        EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
+        EMode.Result => "[dim][[any key]] back  [[q]] quit[/]",
         EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
         EMode.ConfirmBurn => "[yellow]! Disc is not blank — burn will likely coaster.[/]  [[y]] burn anyway   [[n]] cancel",
         _ => atPlatformList
-            ? "[grey][[j/k]] move  [[enter]] open  [[e]] eject  [[q]] quit[/]"
-            : "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[esc]] back  [[e]] eject  [[q]] quit[/]"
+            ? "[dim][[j/k]] move  [[enter]] open  [[e]] eject  [[q]] quit[/]"
+            : "[dim][[j/k]] move  [[/]] search  [[enter]] burn  [[esc]] back  [[e]] eject  [[q]] quit[/]"
     };
 
     private static List<IRenderable> PadTo(List<IRenderable> lines, int target) {
