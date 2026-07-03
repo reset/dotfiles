@@ -21,6 +21,15 @@ internal static partial class CueReader {
         return tracks;
     }
 
+    // The backing binary named by the cue's first FILE directive, or null.
+    public static string? DataFile(string cueText) {
+        Match m = FileLine().Match(cueText);
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
     [GeneratedRegex(@"^\s*TRACK\s+(\d+)\s+(\S+)", RegexOptions.IgnoreCase | RegexOptions.Multiline)]
     private static partial Regex TrackLine();
+
+    [GeneratedRegex(@"FILE\s+""([^""]+)""", RegexOptions.IgnoreCase)]
+    private static partial Regex FileLine();
 }

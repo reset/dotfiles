@@ -11,7 +11,7 @@ public sealed class LibraryDashboardRenderTests {
     // markup escaping of titles containing '[' , '(' and other Spectre markup.
     private static LibraryDashboard NewDashboard() =>
         new(scanner: null!, driveScanner: null!, preparer: null!, burner: null!,
-            processRunner: null!, dependencies: null!, config: new LibraryConfig());
+            processRunner: null!, dependencies: null!, platformDetector: null!, config: new LibraryConfig());
 
     private static string Render(LibraryDashboard dashboard) {
         StringWriter sink = new();

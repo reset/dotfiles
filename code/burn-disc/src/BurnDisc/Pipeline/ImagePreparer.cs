@@ -69,13 +69,18 @@ internal sealed partial class ImagePreparer : IImagePreparer {
             CueSheet sheet = ConvertCcd(ccdFile, workDir);
             string convertedCue = Path.Combine(workDir, $"{Path.GetFileNameWithoutExtension(ccdFile)}.cue");
             await File.WriteAllTextAsync(convertedCue, sheet.Render(), cancellationToken).ConfigureAwait(false);
-            return PreparedImage.FromCue(convertedCue, EImageFormat.Ccd, label, needsSwap: true, sheet.Tracks);
+            string ccdImage = Path.Combine(workDir, sheet.ImageFileName);
+            return PreparedImage.FromCue(convertedCue, EImageFormat.Ccd, label, needsSwap: true, sheet.Tracks, ccdImage);
         }
 
         if (cueFile is not null) {
-            IReadOnlyList<DiscTrack> tracks = CueReader.Parse(await File.ReadAllTextAsync(cueFile, cancellationToken).ConfigureAwait(false));
+            string cueText = await File.ReadAllTextAsync(cueFile, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<DiscTrack> tracks = CueReader.Parse(cueText);
             EImageFormat format = chdFile is not null ? EImageFormat.Chd : EImageFormat.Cue;
-            return PreparedImage.FromCue(cueFile, format, label, needsSwap: false, tracks);
+            string? dataImage = CueReader.DataFile(cueText) is { } dataFile
+                ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(cueFile)) ?? ".", dataFile)
+                : null;
+            return PreparedImage.FromCue(cueFile, format, label, needsSwap: false, tracks, dataImage);
         }
 
         if (isoFile is not null) {

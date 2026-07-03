@@ -15,12 +15,14 @@ internal sealed class BurnService {
     private readonly IImagePreparer m_preparer;
     private readonly IBurner m_burner;
     private readonly IProgressReporter m_reporter;
+    private readonly IPlatformDetector m_platformDetector;
 
-    public BurnService(IDriveScanner driveScanner, IImagePreparer preparer, IBurner burner, IProgressReporter reporter) {
+    public BurnService(IDriveScanner driveScanner, IImagePreparer preparer, IBurner burner, IProgressReporter reporter, IPlatformDetector platformDetector) {
         m_driveScanner = driveScanner;
         m_preparer = preparer;
         m_burner = burner;
         m_reporter = reporter;
+        m_platformDetector = platformDetector;
     }
 
     public async Task<int> RunAsync(CliOptions options, CancellationToken cancellationToken = default) {
@@ -41,6 +43,9 @@ internal sealed class BurnService {
             await m_reporter.RunAsync(async scope => {
                 prepared = await m_preparer.PrepareAsync(inputFile, workDir, scope, cancellationToken).ConfigureAwait(false);
                 scope.Log(prepared.Describe());
+                foreach (string line in PlatformSummary.Lines(m_platformDetector.Detect(prepared.DataImagePath))) {
+                    scope.Log(line);
+                }
                 if (!options.DryRun) {
                     await m_burner.BurnAsync(prepared, speed, scope, cancellationToken).ConfigureAwait(false);
                 }

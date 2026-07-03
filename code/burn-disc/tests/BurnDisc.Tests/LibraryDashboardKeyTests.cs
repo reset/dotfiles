@@ -12,7 +12,7 @@ namespace BurnDisc.Tests;
 public sealed class LibraryDashboardKeyTests {
     private static LibraryDashboard NewDashboard() =>
         new(scanner: null!, driveScanner: null!, preparer: null!, burner: null!,
-            processRunner: null!, dependencies: null!, config: new LibraryConfig());
+            processRunner: null!, dependencies: null!, platformDetector: null!, config: new LibraryConfig());
 
     private static ConsoleKeyInfo Char(char c) => new(c, ConsoleKey.None, shift: false, alt: false, control: false);
 

@@ -27,6 +27,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private readonly IBurner m_burner;
     private readonly IProcessRunner m_processRunner;
     private readonly IDependencyChecker m_dependencies;
+    private readonly IPlatformDetector m_platformDetector;
     private readonly LibraryConfig m_config;
 
     private readonly object m_sync = new();
@@ -35,6 +36,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private List<LibraryItem> m_all = [];
     private bool m_serverLoading = true;
     private readonly List<PhaseState> m_phases = [];
+    private readonly List<string> m_platformLines = [];
     private string? m_burnLog;
     private EMode m_mode = EMode.Browse;
     private bool m_resultOk;
@@ -54,13 +56,15 @@ internal sealed partial class LibraryDashboard : IProgressScope {
 
     public LibraryDashboard(
         ILibraryScanner scanner, IDriveScanner driveScanner, IImagePreparer preparer,
-        IBurner burner, IProcessRunner processRunner, IDependencyChecker dependencies, LibraryConfig config) {
+        IBurner burner, IProcessRunner processRunner, IDependencyChecker dependencies,
+        IPlatformDetector platformDetector, LibraryConfig config) {
         m_scanner = scanner;
         m_driveScanner = driveScanner;
         m_preparer = preparer;
         m_burner = burner;
         m_processRunner = processRunner;
         m_dependencies = dependencies;
+        m_platformDetector = platformDetector;
         m_config = config;
     }
 
@@ -265,6 +269,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private void StartBurn(LibraryItem item) {
         lock (m_sync) {
             m_phases.Clear();
+            m_platformLines.Clear();
             m_burnLog = null;
             m_resultMessage = null;
             m_mode = EMode.Burning;
@@ -285,6 +290,11 @@ internal sealed partial class LibraryDashboard : IProgressScope {
             }
 
             PreparedImage prepared = await m_preparer.PrepareAsync(localFile, workDir, this, cancellationToken).ConfigureAwait(false);
+            IReadOnlyList<string> platformLines = PlatformSummary.Lines(m_platformDetector.Detect(prepared.DataImagePath));
+            lock (m_sync) {
+                m_platformLines.Clear();
+                m_platformLines.AddRange(platformLines);
+            }
             Log(prepared.Describe());
             await m_burner.BurnAsync(prepared, speed, this, cancellationToken).ConfigureAwait(false);
             SetResult(ok: true, $"Burned {item.DisplayName}");
@@ -370,6 +380,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         int localCount, serverCount;
         bool serverLoading;
         List<PhaseState> phases;
+        List<string> platformLines;
         string? burnLog;
         string? resultMessage;
         bool resultOk;
@@ -379,6 +390,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
             serverCount = m_all.Count(static i => i.Source == ELibrarySource.Server);
             serverLoading = m_serverLoading;
             phases = [.. m_phases.Select(p => p.Snapshot())];
+            platformLines = [.. m_platformLines];
             burnLog = m_burnLog;
             resultMessage = m_resultMessage;
             resultOk = m_resultOk;
@@ -388,7 +400,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
 
         switch (mode) {
             case EMode.Burning:
-                rows.AddRange(BurnBody(phases, burnLog));
+                rows.AddRange(BurnBody(phases, platformLines, burnLog));
                 break;
             case EMode.Result:
                 rows.AddRange(ResultBody(resultOk, resultMessage));
@@ -425,7 +437,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         m_cursor = LibraryView.Clamp(m_cursor, 0, Math.Max(0, count - 1));
         m_scroll = LibraryView.ScrollFor(count, m_cursor, m_visibleRows, m_scroll);
 
-        int nameWidth = Math.Clamp(TerminalWidth() - 22, 12, 60);
+        int nameWidth = Math.Clamp(TerminalWidth() - 34, 12, 56);
         List<IRenderable> lines = [];
 
         if (count == 0) {
@@ -447,14 +459,22 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         string name = Truncate(item.DisplayName, nameWidth).PadRight(nameWidth);
         string size = item.SizeDisplay.PadLeft(6);
         string src = item.SourceLabel.PadRight(6);
+        string plat = item.Platform == EPlatform.Unknown ? "" : $"[{Platform.DisplayName(item.Platform)}]";
         if (selected) {
-            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}[/]";
+            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}  {plat}[/]";
         }
-        return $"  {Markup.Escape(name)}  [grey]{size}[/]  [grey]{src}[/]";
+        return $"  {Markup.Escape(name)}  [grey]{size}[/]  [grey]{src}[/]  [grey]{Markup.Escape(plat)}[/]";
     }
 
-    private List<IRenderable> BurnBody(List<PhaseState> phases, string? burnLog) {
+    private List<IRenderable> BurnBody(List<PhaseState> phases, List<string> platformLines, string? burnLog) {
         List<IRenderable> lines = [];
+        foreach (string line in platformLines) {
+            lines.Add(new Markup($"[grey]  {Markup.Escape(line)}[/]"));
+        }
+        if (platformLines.Count > 0) {
+            lines.Add(new Text(""));
+        }
+
         int barWidth = Math.Clamp(TerminalWidth() - 30, 10, 50);
         foreach (PhaseState phase in phases) {
             double pct = phase.Max > 0 ? phase.Value / phase.Max * 100 : 0;

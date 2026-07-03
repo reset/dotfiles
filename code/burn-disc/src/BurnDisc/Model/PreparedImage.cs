@@ -11,12 +11,14 @@ internal sealed class PreparedImage {
         EImageFormat sourceFormat,
         string? cueFilePath,
         string? isoFilePath,
+        string? dataImagePath,
         bool needsSwap,
         IReadOnlyList<DiscTrack> tracks) {
         SourceLabel = sourceLabel;
         SourceFormat = sourceFormat;
         CueFilePath = cueFilePath;
         IsoFilePath = isoFilePath;
+        DataImagePath = dataImagePath;
         NeedsSwap = needsSwap;
         Tracks = tracks;
     }
@@ -25,6 +27,7 @@ internal sealed class PreparedImage {
     public EImageFormat SourceFormat { get; }
     public string? CueFilePath { get; }
     public string? IsoFilePath { get; }
+    public string? DataImagePath { get; }      // backing binary (bin/img/iso) whose header identifies the platform
     public bool NeedsSwap { get; }             // true for CCD/img: audio is big-endian
     public IReadOnlyList<DiscTrack> Tracks { get; }
 
@@ -32,11 +35,11 @@ internal sealed class PreparedImage {
 
     public static PreparedImage FromCue(
         string cueFilePath, EImageFormat sourceFormat, string sourceLabel,
-        bool needsSwap, IReadOnlyList<DiscTrack> tracks) =>
-        new(sourceLabel, sourceFormat, cueFilePath, isoFilePath: null, needsSwap, tracks);
+        bool needsSwap, IReadOnlyList<DiscTrack> tracks, string? dataImagePath) =>
+        new(sourceLabel, sourceFormat, cueFilePath, isoFilePath: null, dataImagePath, needsSwap, tracks);
 
     public static PreparedImage FromIso(string isoFilePath, string sourceLabel) =>
-        new(sourceLabel, EImageFormat.Iso, cueFilePath: null, isoFilePath, needsSwap: false, tracks: []);
+        new(sourceLabel, EImageFormat.Iso, cueFilePath: null, isoFilePath, dataImagePath: isoFilePath, needsSwap: false, tracks: []);
 
     // One-line summary of the burnable format and its track layout.
     public string Describe() {

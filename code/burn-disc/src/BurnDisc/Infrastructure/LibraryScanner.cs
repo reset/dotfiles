@@ -43,7 +43,7 @@ internal sealed class LibraryScanner : ILibraryScanner {
             } catch (IOException) {
                 continue;
             }
-            items.Add(new LibraryItem(Path.GetFileNameWithoutExtension(file), ELibrarySource.Local, file, size));
+            items.Add(new LibraryItem(Path.GetFileNameWithoutExtension(file), ELibrarySource.Local, file, size, Platform.FromPath(file)));
         }
         return items;
     }
@@ -73,7 +73,7 @@ internal sealed class LibraryScanner : ILibraryScanner {
                 continue;
             }
             string relative = line[(tab + 1)..];
-            items.Add(new LibraryItem(Path.GetFileNameWithoutExtension(relative), ELibrarySource.Server, relative, size));
+            items.Add(new LibraryItem(Path.GetFileNameWithoutExtension(relative), ELibrarySource.Server, relative, size, Platform.FromPath(relative)));
         }
         return items;
     }

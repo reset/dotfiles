@@ -35,6 +35,7 @@ _ = services.AddSingleton<IDependencyChecker, DependencyChecker>();
 _ = services.AddSingleton<IDriveScanner, DriveScanner>();
 _ = services.AddSingleton<IImagePreparer, ImagePreparer>();
 _ = services.AddSingleton<IBurner, Burner>();
+_ = services.AddSingleton<IPlatformDetector, PlatformDetector>();
 _ = services.AddSingleton<LibraryConfig>();
 _ = services.AddSingleton<ILibraryScanner, LibraryScanner>();
 _ = services.AddSingleton<LibraryDashboard>();
