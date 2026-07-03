@@ -115,6 +115,8 @@ function _install_packages_macos () {
   echo "Installing macOS system packages..."
   softwareupdate --install-rosetta
   brew trust jaxxstorm/tap
+  brew tap hashicorp/tap
+  brew trust hashicorp/tap
   brew bundle install --file="$HOME/Brewfile"
 }
 
@@ -167,6 +169,10 @@ function _install_packages_ubuntu () {
 
   # Cross-platform CLI tools via Homebrew — macOS-only entries in the Brewfile
   # are guarded with `if OS.mac?`, so this installs only the shared set on Linux.
+  # HashiCorp tools (terraform/consul) live in a third-party tap that Homebrew
+  # now refuses to load until trusted.
+  brew tap hashicorp/tap
+  brew trust hashicorp/tap
   brew bundle install --file="$HOME/Brewfile"
 }
 
