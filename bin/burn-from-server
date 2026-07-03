@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# burn-from-server — search the media server, pick a file, and burn it
+# burn-from-server — search the library (local first, server fallback), pick a
+# file, and burn it. Local hits burn straight from disk; server hits download
+# to a temp dir first.
 # Usage: burn-from-server <query> [--speed N]
 #
 # Environment overrides (passed through to server-search and burn-disc):
-#   MEDIA_HOST   SSH target        (default: reset@192.168.1.28)
-#   MEDIA_PATH   Search root path  (default: /var/lib/transmission-daemon/downloads)
+#   LIBRARY_PATH  Local search root  (default: $HOME/roms)
+#   MEDIA_HOST    SSH target         (default: reset@192.168.1.28)
+#   MEDIA_PATH    Server search root (default: /var/lib/transmission-daemon/downloads)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIBRARY_PATH="${LIBRARY_PATH:-$HOME/roms}"
 MEDIA_HOST="${MEDIA_HOST:-reset@192.168.1.28}"
 MEDIA_PATH="${MEDIA_PATH:-/var/lib/transmission-daemon/downloads}"
+
+# Format a tab-delimited "<source>\t<size>\t<path>" result line for display.
+fmt_result() {
+    local src size path
+    IFS=$'\t' read -r src size path <<< "$1"
+    printf '[%s] %-8s %s' "$src" "$size" "$path"
+}
 
 usage() {
     echo "Usage: burn-from-server <query> [--speed N]" >&2
@@ -68,7 +79,7 @@ fi
 
 # --- pick ---
 if [[ ${#results[@]} -eq 1 ]]; then
-    echo "${results[0]}"
+    fmt_result "${results[0]}"; echo ""
     chosen="${results[0]}"
     if [[ "$dry_run" -eq 0 ]]; then
         echo ""
@@ -78,7 +89,7 @@ if [[ ${#results[@]} -eq 1 ]]; then
     fi
 else
     for i in "${!results[@]}"; do
-        printf "  %d) %s\n" "$((i + 1))" "${results[$i]}"
+        printf "  %d) %s\n" "$((i + 1))" "$(fmt_result "${results[$i]}")"
     done
     if [[ "$dry_run" -eq 1 ]]; then
         echo ""
@@ -96,11 +107,23 @@ else
     chosen="${results[$((pick - 1))]}"
 fi
 
-# Extract just the relative path (strip the size/[dir] column)
-rel_path="$(echo "$chosen" | awk '{$1=""; print substr($0,2)}')"
-remote_file="${MEDIA_PATH}/${rel_path}"
+# Parse the chosen result into its source and path (tab-delimited)
+IFS=$'\t' read -r src _size rel_path <<< "$chosen"
 
 echo ""
+
+# --- local source: burn straight from the library, no download ---
+if [[ "$src" == "local" ]]; then
+    local_file="${LIBRARY_PATH}/${rel_path}"
+    if [[ "$dry_run" -eq 1 ]]; then
+        echo "Would burn (local): ${local_file}${speed:+ at ${speed}x}"
+        exit 0
+    fi
+    exec "$SCRIPT_DIR/burn-disc" "$local_file" ${speed:+--speed "$speed"}
+fi
+
+# --- server source: download to a temp dir, then burn ---
+remote_file="${MEDIA_PATH}/${rel_path}"
 
 if [[ "$dry_run" -eq 1 ]]; then
     echo "Would download: ${MEDIA_HOST}:${remote_file}"
@@ -110,7 +133,6 @@ fi
 
 echo "Downloading $(basename "$rel_path")..."
 
-# Download to a temp dir and burn from there
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
