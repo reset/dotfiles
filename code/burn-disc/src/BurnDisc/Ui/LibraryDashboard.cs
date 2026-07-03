@@ -134,7 +134,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                     HandleSearchKey(key);
                     break;
                 case EMode.Result:
-                    if (key.Key == ConsoleKey.Q) {
+                    if (key.KeyChar == 'q' || key.Key == ConsoleKey.Q) {
                         m_quit = true;
                     } else {
                         SetMode(EMode.Browse);
@@ -149,31 +149,65 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         }
     }
 
+    // Test seams for the key dispatch (the macOS KeyChar/Key.None case).
+    internal bool InSearchModeForTest { get { lock (m_sync) { return m_mode == EMode.Search; } } }
+    internal int CursorForTest => m_cursor;
+    internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
+    internal void HandleKeyForTest(ConsoleKeyInfo key) {
+        if (InSearchModeForTest) {
+            HandleSearchKey(key);
+        } else {
+            HandleBrowseKey(key);
+        }
+    }
+
     private void HandleBrowseKey(ConsoleKeyInfo key) {
         int count = Filtered().Count;
         int page = Math.Max(1, m_visibleRows - 1);
+        char c = key.KeyChar;
 
-        if (key.Key != ConsoleKey.G) {
+        // A lone 'g' arms go-to-top; any other key cancels the pending sequence.
+        if (c != 'g') {
             m_pendingG = false;
         }
 
+        // Arrows and Enter map reliably through Key on every platform.
         switch (key.Key) {
-            case ConsoleKey.J or ConsoleKey.DownArrow:
-                m_cursor++;
+            case ConsoleKey.DownArrow:
+                MoveCursor(1, count);
+                return;
+            case ConsoleKey.UpArrow:
+                MoveCursor(-1, count);
+                return;
+            case ConsoleKey.Enter:
+                if (count > 0) {
+                    StartBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
+                }
+                return;
+            default:
                 break;
-            case ConsoleKey.K or ConsoleKey.UpArrow:
-                m_cursor--;
+        }
+
+        // Character commands are matched on KeyChar: on macOS/Unix, ReadKey
+        // leaves ConsoleKeyInfo.Key as None for punctuation (and often letters),
+        // so '/' and friends only come through reliably as KeyChar.
+        switch (c) {
+            case 'j':
+                MoveCursor(1, count);
                 break;
-            case ConsoleKey.D:
-                m_cursor += page;
+            case 'k':
+                MoveCursor(-1, count);
                 break;
-            case ConsoleKey.U:
-                m_cursor -= page;
+            case 'd':
+                MoveCursor(page, count);
                 break;
-            case ConsoleKey.G when key.Modifiers.HasFlag(ConsoleModifiers.Shift):
-                m_cursor = count - 1;
+            case 'u':
+                MoveCursor(-page, count);
                 break;
-            case ConsoleKey.G:
+            case 'G':
+                MoveCursor(count, count); // clamps to the last row
+                break;
+            case 'g':
                 if (m_pendingG) {
                     m_cursor = 0;
                     m_pendingG = false;
@@ -181,44 +215,46 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                     m_pendingG = true;
                 }
                 break;
-            case ConsoleKey.Oem2: // '/'
+            case '/':
                 SetMode(EMode.Search);
                 break;
-            case ConsoleKey.Enter:
-                if (count > 0) {
-                    StartBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
-                }
-                return;
-            case ConsoleKey.Q:
+            case 'q':
                 m_quit = true;
-                return;
+                break;
             default:
                 break;
         }
+    }
 
-        m_cursor = LibraryView.Clamp(m_cursor, 0, Math.Max(0, count - 1));
+    private void MoveCursor(int delta, int count) {
+        m_cursor = LibraryView.Clamp(m_cursor + delta, 0, Math.Max(0, count - 1));
     }
 
     private void HandleSearchKey(ConsoleKeyInfo key) {
-        switch (key.Key) {
-            case ConsoleKey.Enter:
-                SetMode(EMode.Browse);
-                return;
-            case ConsoleKey.Escape:
-                m_filter = "";
-                SetMode(EMode.Browse);
-                break;
-            case ConsoleKey.Backspace:
-                if (m_filter.Length > 0) {
-                    m_filter = m_filter[..^1];
-                }
-                break;
-            default:
-                if (!char.IsControl(key.KeyChar)) {
-                    m_filter += key.KeyChar;
-                }
-                break;
+        char c = key.KeyChar;
+
+        // Enter applies the filter; Escape clears it. Both map reliably via Key,
+        // with a KeyChar fallback for terminals that only fill KeyChar.
+        if (key.Key == ConsoleKey.Enter || c is '\r' or '\n') {
+            SetMode(EMode.Browse);
+            return;
         }
+        if (key.Key == ConsoleKey.Escape || c == '\x1b') {
+            m_filter = "";
+            SetMode(EMode.Browse);
+            m_cursor = 0;
+            m_scroll = 0;
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Backspace || c is '\b' or '\x7f') {
+            if (m_filter.Length > 0) {
+                m_filter = m_filter[..^1];
+            }
+        } else if (!char.IsControl(c)) {
+            m_filter += c;
+        }
+
         m_cursor = 0;
         m_scroll = 0;
     }
