@@ -35,6 +35,10 @@ internal sealed class BurnService {
         OpticalDrive? drive = options.DryRun ? null : await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false);
         int? speed = ResolveSpeed(options, drive);
 
+        if (!options.DryRun && drive is { MediaType: null }) {
+            m_reporter.Warn("No disc in the drive — insert a blank CD-R.");
+            return 1;
+        }
         if (!options.DryRun && drive?.IsBlank == false) {
             m_reporter.Warn("Disc is not blank — the burn will likely fail. Insert a blank CD-R.");
         }

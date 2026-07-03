@@ -17,6 +17,7 @@ public sealed class LibraryDashboardKeyTests {
     private static ConsoleKeyInfo Char(char c) => new(c, ConsoleKey.None, shift: false, alt: false, control: false);
     private static ConsoleKeyInfo Enter() => new('\r', ConsoleKey.Enter, shift: false, alt: false, control: false);
     private static OpticalDrive Drive(bool? isBlank) => new("ASUS", "SDRW", "CD-R", [10], isBlank, usedBytes: isBlank == false ? 100_000 : 0);
+    private static OpticalDrive NoDisc() => new("ASUS", "SDRW", mediaType: null, [10], isBlank: null, usedBytes: 0);
     private static ConsoleKeyInfo CtrlC() => new('\u0003', ConsoleKey.C, shift: false, alt: false, control: true);
 
     private static LibraryDashboard Seeded() {
@@ -97,6 +98,18 @@ public sealed class LibraryDashboardKeyTests {
 
         Assert.False(dashboard.InConfirmBurnForTest);
         Assert.False(dashboard.InBurningForTest);
+    }
+
+    [Fact]
+    public void Enter_WithNoDisc_RefusesAndNotifies() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.SetDriveForTest(NoDisc());
+
+        dashboard.HandleKeyForTest(Enter());
+
+        Assert.False(dashboard.InConfirmBurnForTest);
+        Assert.False(dashboard.InBurningForTest); // never starts a burn with no disc
+        Assert.NotNull(dashboard.NoticeForTest);
     }
 
     [Fact]

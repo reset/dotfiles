@@ -56,6 +56,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private LibraryItem? m_pendingBurn; // awaiting non-blank-disc confirmation
     private Task? m_ejectTask;
     private bool m_ejecting;
+    private string? m_notice; // transient browse-line message (e.g. "no disc")
 
     public LibraryDashboard(
         ILibraryScanner scanner, IDriveScanner driveScanner, IImagePreparer preparer,
@@ -213,6 +214,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     internal bool InBurningForTest { get { lock (m_sync) { return m_mode == EMode.Burning; } } }
     internal bool QuitRequestedForTest => m_quit;
     internal bool EjectingForTest => m_ejecting;
+    internal string? NoticeForTest => m_notice;
     internal int CursorForTest => m_cursor;
     internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
     internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
@@ -223,6 +225,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         int count = Filtered().Count;
         int page = Math.Max(1, m_visibleRows - 1);
         char c = key.KeyChar;
+
+        m_notice = null; // any keypress clears a stale notice; RequestBurn may re-set it
 
         // A lone 'g' arms go-to-top; any other key cancels the pending sequence.
         if (c != 'g') {
@@ -351,8 +355,13 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         }
     }
 
-    // Burning onto a non-blank disc is a guaranteed coaster, so confirm first.
+    // Guards before a burn: refuse with no disc loaded, confirm on a non-blank
+    // disc (guaranteed coaster), otherwise proceed.
     private void RequestBurn(LibraryItem item) {
+        if (m_drive is { MediaType: null }) {
+            m_notice = "No disc in the drive — insert a blank CD-R.";
+            return;
+        }
         if (m_drive?.IsBlank == false) {
             m_pendingBurn = item;
             SetMode(EMode.ConfirmBurn);
@@ -524,7 +533,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         if (mode == EMode.Search) {
             return $"[grey]Search[/]  {Markup.Escape(m_filter)}[blink]▌[/]";
         }
-        return library + drive;
+        string notice = m_notice is { Length: > 0 } n ? $"   [red]! {Markup.Escape(n)}[/]" : "";
+        return library + drive + notice;
     }
 
     private List<IRenderable> ListBody() {
