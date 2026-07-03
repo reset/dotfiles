@@ -66,14 +66,22 @@ public sealed class DriveScannerTests {
     }
 
     [Fact]
-    public void ExtractVolumeLabel_FindsMountedVolumeForDevice() {
+    public void ExtractVolumeLabel_PrefersAudioVolumeTitle_OverGenericIsoLabel() {
+        // Real Ecco disc: the ISO9660 data label is boilerplate; the cddafs audio
+        // volume has the actual game title. Prefer the latter.
         const string mount = """
             /dev/disk3s1 on / (apfs, local, read-only, journaled)
-            /dev/disk4s0 on /Volumes/FINAL_FIGHT (cd9660, local, nodev, nosuid, read-only, noowners)
-            /dev/disk4 on /Volumes/Final Fight CD (cddafs, local, nodev, nosuid, read-only, noowners)
+            /dev/disk4s0 on /Volumes/MEGADRIVE_GAME_SPECIAL (cd9660, local, nodev, nosuid, read-only, noowners)
+            /dev/disk4 on /Volumes/Ecco: The Tides Of Time (cddafs, local, nodev, nosuid, read-only, noowners)
             """;
-        Assert.Equal("FINAL_FIGHT", DriveScanner.ExtractVolumeLabel(mount, "/dev/disk4"));
+        Assert.Equal("Ecco: The Tides Of Time", DriveScanner.ExtractVolumeLabel(mount, "/dev/disk4"));
         Assert.Null(DriveScanner.ExtractVolumeLabel(mount, "/dev/disk9"));
+    }
+
+    [Fact]
+    public void ExtractVolumeLabel_FallsBackToIsoLabel_WhenNoAudioVolume() {
+        const string mount = "/dev/disk4s0 on /Volumes/SOME_DATA_DISC (cd9660, local, read-only)";
+        Assert.Equal("SOME_DATA_DISC", DriveScanner.ExtractVolumeLabel(mount, "/dev/disk4"));
     }
 
     [Fact]

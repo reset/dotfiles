@@ -102,16 +102,23 @@ internal sealed partial class DriveScanner : IDriveScanner {
         return m.Success ? m.Groups[1].Value : null;
     }
 
-    // The first mounted volume name for the given device, from `mount` output
-    // (lines like "/dev/disk4s0 on /Volumes/FINAL_FIGHT (cd9660, ...)").
+    // The mounted volume name for the given device, from `mount` output (lines
+    // like "/dev/disk4s0 on /Volumes/FINAL_FIGHT (cd9660, ...)"). The audio
+    // (cddafs) volume carries the game title, so it's preferred over the data
+    // track's ISO9660 label, which is often generic mastering boilerplate
+    // ("MEGADRIVE_GAME_SPECIAL"). Falls back to the first volume found.
     public static string? ExtractVolumeLabel(string mountOutput, string deviceNode) {
+        string? fallback = null;
         foreach (string line in mountOutput.Split('\n')) {
             Match m = MountLine().Match(line);
             if (m.Success && m.Groups[1].Value.StartsWith(deviceNode, StringComparison.Ordinal)) {
-                return m.Groups[2].Value.Trim();
+                if (m.Groups[3].Value == "cddafs") {
+                    return m.Groups[2].Value.Trim();
+                }
+                fallback ??= m.Groups[2].Value.Trim();
             }
         }
-        return null;
+        return fallback;
     }
 
     [GeneratedRegex(@"\s{2,}")]
@@ -135,6 +142,6 @@ internal sealed partial class DriveScanner : IDriveScanner {
     [GeneratedRegex(@"Name:\s*(/dev/\S+)")]
     private static partial Regex DeviceNode();
 
-    [GeneratedRegex(@"^(\S+) on /Volumes/(.+?) \(")]
+    [GeneratedRegex(@"^(\S+) on /Volumes/(.+?) \((\w+)")]
     private static partial Regex MountLine();
 }
