@@ -29,6 +29,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private readonly IProcessRunner m_processRunner;
     private readonly IDependencyChecker m_dependencies;
     private readonly IPlatformDetector m_platformDetector;
+    private readonly IBurnHistory m_history;
     private readonly LibraryConfig m_config;
 
     private readonly object m_sync = new();
@@ -66,7 +67,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     public LibraryDashboard(
         ILibraryScanner scanner, IDriveScanner driveScanner, IImagePreparer preparer,
         IBurner burner, IProcessRunner processRunner, IDependencyChecker dependencies,
-        IPlatformDetector platformDetector, LibraryConfig config) {
+        IPlatformDetector platformDetector, IBurnHistory history, LibraryConfig config) {
         m_scanner = scanner;
         m_driveScanner = driveScanner;
         m_preparer = preparer;
@@ -74,6 +75,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         m_processRunner = processRunner;
         m_dependencies = dependencies;
         m_platformDetector = platformDetector;
+        m_history = history;
         m_config = config;
     }
 
@@ -525,6 +527,16 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
                 m_lastBurnedTitle = item.DisplayName; // we know exactly what's on this disc now
             }
             SetResult(ok: true, $"Burned {item.DisplayName}");
+
+            // Fingerprint the freshly-burned disc and remember it, so it identifies
+            // itself on re-insert even in a future session.
+            OpticalDrive? burned = await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false);
+            if (burned is { MediaType: not null }) {
+                if (burned.TrackCount > 0) {
+                    m_history.Record(burned.Fingerprint, item.DisplayName);
+                }
+                ApplyDriveScan(burned);
+            }
         } catch (OperationCanceledException) {
             SetResult(ok: false, "Burn aborted — the disc is a coaster.");
         } catch (Exception ex) {
@@ -653,9 +665,10 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         if (m_ejecting) {
             drive = "   [grey]·[/]  [yellow]ejecting…[/]";
         } else if (m_drive is { } d) {
-            // Identity we trust: the title we burned this session, else the disc's
-            // volume label (unreliable — often generic mastering boilerplate).
-            string? identity = lastBurned ?? d.VolumeLabel;
+            // Identity, most-trusted first: what we burned this session, what we've
+            // ever burned onto a disc with this fingerprint, then the disc's own
+            // volume label — but only if it isn't generic mastering boilerplate.
+            string? identity = lastBurned ?? m_history.Lookup(d.Fingerprint) ?? DiscLabels.Meaningful(d.VolumeLabel);
             string idPart = identity is { Length: > 0 } id ? $"  \"{Markup.Escape(id)}\"" : "";
             drive = $"   [grey]·[/]  {Markup.Escape(d.DisplayName)}  [grey]{Markup.Escape(d.MediaSummary)}{idPart}[/]";
         } else {

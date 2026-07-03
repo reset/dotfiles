@@ -9,9 +9,16 @@ public sealed class LibraryDashboardRenderTests {
     // BuildFrame touches only render state (never the injected services), so
     // null deps are safe here — this exercises frame assembly and, crucially,
     // markup escaping of titles containing '[' , '(' and other Spectre markup.
-    private static LibraryDashboard NewDashboard() =>
+    private static LibraryDashboard NewDashboard(IBurnHistory? history = null) =>
         new(scanner: null!, driveScanner: null!, preparer: null!, burner: null!,
-            processRunner: null!, dependencies: null!, platformDetector: null!, config: new LibraryConfig());
+            processRunner: null!, dependencies: null!, platformDetector: null!,
+            history: history ?? new FakeHistory(), config: new LibraryConfig());
+
+    private sealed class FakeHistory : IBurnHistory {
+        private readonly Dictionary<DiscFingerprint, string> m_map = [];
+        public string? Lookup(DiscFingerprint fingerprint) => m_map.GetValueOrDefault(fingerprint);
+        public void Record(DiscFingerprint fingerprint, string title) => m_map[fingerprint] = title;
+    }
 
     private static string Render(LibraryDashboard dashboard) {
         StringWriter sink = new();
@@ -71,6 +78,33 @@ public sealed class LibraryDashboardRenderTests {
 
         Assert.Contains("Heart of the Alien", output);
         Assert.DoesNotContain("Audio CD", output);
+    }
+
+    [Fact]
+    public void BuildFrame_ResolvesTitleFromBurnHistory_ForJunkLabelledDisc() {
+        FakeHistory history = new();
+        history.Record(new DiscFingerprint(42, 358), "Heart of the Alien - Out of This World Parts I and II (USA)");
+        LibraryDashboard dashboard = NewDashboard(history);
+        // Disc's own label is the placeholder "TEST"; history should win.
+        dashboard.SetDriveForTest(new OpticalDrive("ASUS", "SDRW", "CD-ROM", [10],
+            isBlank: false, usedBytes: 358L * 1024 * 1024, volumeLabel: "TEST", trackCount: 42));
+
+        string output = Render(dashboard);
+
+        Assert.Contains("Heart of the Alien", output);
+        Assert.DoesNotContain("TEST", output);
+    }
+
+    [Fact]
+    public void BuildFrame_JunkLabelWithNoHistory_ShowsNoIdentity() {
+        LibraryDashboard dashboard = NewDashboard();
+        dashboard.SetDriveForTest(new OpticalDrive("ASUS", "SDRW", "CD-ROM", [10],
+            isBlank: false, usedBytes: 358L * 1024 * 1024, volumeLabel: "TEST", trackCount: 42));
+
+        string output = Render(dashboard);
+
+        Assert.Contains("has data", output);
+        Assert.DoesNotContain("TEST", output); // placeholder label is suppressed, not shown as a title
     }
 
     [Fact]

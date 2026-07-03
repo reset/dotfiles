@@ -93,7 +93,13 @@ internal sealed partial class DriveScanner : IDriveScanner {
             isBlank = usedBytes == 0;
         }
 
-        return new OpticalDrive(vendor, product, mediaType, speeds, isBlank, usedBytes, volumeLabel);
+        int trackCount = 0;
+        Match tracksMatch = TracksLine().Match(text);
+        if (tracksMatch.Success) {
+            _ = int.TryParse(tracksMatch.Groups[1].Value, out trackCount);
+        }
+
+        return new OpticalDrive(vendor, product, mediaType, speeds, isBlank, usedBytes, volumeLabel, trackCount);
     }
 
     // The drive's device node from drutil's "Name: /dev/diskN" line.
@@ -148,6 +154,9 @@ internal sealed partial class DriveScanner : IDriveScanner {
 
     [GeneratedRegex(@"Writability:\s*(.+)")]
     private static partial Regex WritabilityLine();
+
+    [GeneratedRegex(@"Tracks:\s*(\d+)")]
+    private static partial Regex TracksLine();
 
     [GeneratedRegex(@"Name:\s*(/dev/\S+)")]
     private static partial Regex DeviceNode();

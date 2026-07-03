@@ -5,7 +5,7 @@ namespace BurnDisc.Model;
 // media's type, blank/used state, and the write speeds the drive advertises.
 //
 internal sealed class OpticalDrive {
-    public OpticalDrive(string vendor, string product, string? mediaType, IReadOnlyList<int> writeSpeeds, bool? isBlank, long usedBytes, string? volumeLabel = null) {
+    public OpticalDrive(string vendor, string product, string? mediaType, IReadOnlyList<int> writeSpeeds, bool? isBlank, long usedBytes, string? volumeLabel = null, int trackCount = 0) {
         Vendor = vendor;
         Product = product;
         MediaType = mediaType;
@@ -13,6 +13,7 @@ internal sealed class OpticalDrive {
         IsBlank = isBlank;
         UsedBytes = usedBytes;
         VolumeLabel = volumeLabel;
+        TrackCount = trackCount;
     }
 
     public string Vendor { get; }
@@ -22,6 +23,10 @@ internal sealed class OpticalDrive {
     public bool? IsBlank { get; }              // null when unknown / no media
     public long UsedBytes { get; }
     public string? VolumeLabel { get; }        // mounted volume name of a written disc, if any
+    public int TrackCount { get; }             // tracks on a written disc, 0 if blank / unknown
+
+    // A cheap identity for a written disc — see DiscFingerprint.
+    public DiscFingerprint Fingerprint => new(TrackCount, (int)(UsedBytes / (1024 * 1024)));
 
     public string DisplayName => $"{Vendor} {Product}".Trim();
 
