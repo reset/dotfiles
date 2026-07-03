@@ -73,7 +73,6 @@ if OS.mac?
   cask "google-drive"
   cask "keybase"
   cask "nordvpn"
-  cask "notable"
   cask "obs"
   cask "p4"
   cask "p4v"
