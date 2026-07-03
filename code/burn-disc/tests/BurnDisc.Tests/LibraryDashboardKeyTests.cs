@@ -147,26 +147,50 @@ public sealed class LibraryDashboardKeyTests {
         Assert.True(dashboard.InConfirmQuitForTest);
     }
 
-    [Fact]
-    public void CtrlC_WhileBurning_ArmsAbort_DoesNotQuit() {
+    [Theory]
+    [InlineData('x')]
+    public void AbortKey_WhileBurning_OpensAbortConfirm(char key) {
         LibraryDashboard dashboard = Seeded();
         dashboard.EnterBurningModeForTest();
 
-        dashboard.HandleKeyForTest(CtrlC());
+        dashboard.HandleKeyForTest(Char(key));
 
-        Assert.False(dashboard.QuitRequestedForTest); // a single Ctrl-C never quits or interrupts
-        Assert.True(dashboard.AbortArmedForTest);      // it arms the abort instead
+        Assert.True(dashboard.InConfirmAbortForTest);
+        Assert.False(dashboard.QuitRequestedForTest);
     }
 
     [Fact]
-    public void CtrlC_Twice_WhileBurning_DoesNotQuit() {
+    public void Escape_WhileBurning_OpensAbortConfirm() {
         LibraryDashboard dashboard = Seeded();
         dashboard.EnterBurningModeForTest();
 
-        dashboard.HandleKeyForTest(CtrlC());
-        dashboard.HandleKeyForTest(CtrlC()); // second press aborts the burn task, not the app
+        dashboard.HandleKeyForTest(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, shift: false, alt: false, control: false));
 
+        Assert.True(dashboard.InConfirmAbortForTest);
+    }
+
+    [Fact]
+    public void CtrlC_WhileBurning_OpensAbortConfirm_DoesNotQuit() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.EnterBurningModeForTest();
+
+        dashboard.HandleKeyForTest(CtrlC()); // routes to abort confirm, never quits mid-burn
+
+        Assert.True(dashboard.InConfirmAbortForTest);
         Assert.False(dashboard.QuitRequestedForTest);
+    }
+
+    [Fact]
+    public void AbortConfirm_N_ResumesBurn() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.EnterBurningModeForTest();
+        dashboard.HandleKeyForTest(Char('x'));
+
+        dashboard.HandleKeyForTest(Char('n'));
+
+        Assert.False(dashboard.InConfirmAbortForTest);
+        Assert.False(dashboard.QuitRequestedForTest);
+        Assert.True(dashboard.InBurningForTest); // back to the burn
     }
 
     [Fact]
