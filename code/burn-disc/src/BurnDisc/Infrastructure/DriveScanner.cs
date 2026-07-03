@@ -66,7 +66,21 @@ internal sealed partial class DriveScanner : IDriveScanner {
             }
         }
 
-        return new OpticalDrive(vendor, product, mediaType, speeds);
+        // Used space (drutil reports 2048-byte blocks), and blank/used state.
+        long usedBytes = 0;
+        bool? isBlank = null;
+        Match usedMatch = SpaceUsedLine().Match(text);
+        if (usedMatch.Success && long.TryParse(usedMatch.Groups[1].Value, out long usedBlocks)) {
+            usedBytes = usedBlocks * 2048L;
+        }
+        Match writabilityMatch = WritabilityLine().Match(text);
+        if (writabilityMatch.Success) {
+            isBlank = writabilityMatch.Groups[1].Value.Contains("blank", StringComparison.OrdinalIgnoreCase);
+        } else if (usedMatch.Success) {
+            isBlank = usedBytes == 0;
+        }
+
+        return new OpticalDrive(vendor, product, mediaType, speeds, isBlank, usedBytes);
     }
 
     [GeneratedRegex(@"\s{2,}")]
@@ -80,4 +94,10 @@ internal sealed partial class DriveScanner : IDriveScanner {
 
     [GeneratedRegex(@"(\d+)x")]
     private static partial Regex SpeedValue();
+
+    [GeneratedRegex(@"Space Used:.*?blocks:\s*(\d+)")]
+    private static partial Regex SpaceUsedLine();
+
+    [GeneratedRegex(@"Writability:\s*(.+)")]
+    private static partial Regex WritabilityLine();
 }

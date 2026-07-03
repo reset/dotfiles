@@ -17,7 +17,7 @@ namespace BurnDisc.Ui;
 // that writes phase state here under a lock, and the render loop paints it.
 //
 internal sealed partial class LibraryDashboard : IProgressScope {
-    private enum EMode { Browse, Search, Burning, Result, ConfirmQuit }
+    private enum EMode { Browse, Search, Burning, Result, ConfirmQuit, ConfirmBurn }
 
     private const int PollIntervalMs = 50;
 
@@ -53,6 +53,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private Task<IReadOnlyList<LibraryItem>>? m_serverScan;
     private Task? m_driveScan;
     private Task? m_burnTask;
+    private LibraryItem? m_pendingBurn; // awaiting non-blank-disc confirmation
 
     public LibraryDashboard(
         ILibraryScanner scanner, IDriveScanner driveScanner, IImagePreparer preparer,
@@ -171,6 +172,18 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                     SetMode(EMode.Browse);
                 }
                 break;
+            case EMode.ConfirmBurn:
+                if (key.KeyChar is 'y' or 'Y' || key.Key == ConsoleKey.Y) {
+                    LibraryItem? pending = m_pendingBurn;
+                    m_pendingBurn = null;
+                    if (pending is not null) {
+                        StartBurn(pending);
+                    }
+                } else {
+                    m_pendingBurn = null;
+                    SetMode(EMode.Browse);
+                }
+                break;
             case EMode.Result:
                 if (key.KeyChar == 'q' || key.Key == ConsoleKey.Q) {
                     m_quit = true;
@@ -193,10 +206,13 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     // confirmation, and Ctrl-C handling).
     internal bool InSearchModeForTest { get { lock (m_sync) { return m_mode == EMode.Search; } } }
     internal bool InConfirmQuitForTest { get { lock (m_sync) { return m_mode == EMode.ConfirmQuit; } } }
+    internal bool InConfirmBurnForTest { get { lock (m_sync) { return m_mode == EMode.ConfirmBurn; } } }
+    internal bool InBurningForTest { get { lock (m_sync) { return m_mode == EMode.Burning; } } }
     internal bool QuitRequestedForTest => m_quit;
     internal int CursorForTest => m_cursor;
     internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
     internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
+    internal void SetDriveForTest(OpticalDrive? drive) => m_drive = drive;
     internal void HandleKeyForTest(ConsoleKeyInfo key) => DispatchKey(key);
 
     private void HandleBrowseKey(ConsoleKeyInfo key) {
@@ -219,7 +235,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                 return;
             case ConsoleKey.Enter:
                 if (count > 0) {
-                    StartBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
+                    RequestBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
                 }
                 return;
             default:
@@ -300,6 +316,16 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     //
     // Burn
     //
+    // Burning onto a non-blank disc is a guaranteed coaster, so confirm first.
+    private void RequestBurn(LibraryItem item) {
+        if (m_drive?.IsBlank == false) {
+            m_pendingBurn = item;
+            SetMode(EMode.ConfirmBurn);
+        } else {
+            StartBurn(item);
+        }
+    }
+
     private void StartBurn(LibraryItem item) {
         lock (m_sync) {
             m_phases.Clear();
@@ -458,7 +484,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private string StatusLine(int localCount, int serverCount, bool serverLoading, EMode mode) {
         string server = serverLoading ? "[yellow]scanning server…[/]" : $"{serverCount} server";
         string library = $"[grey]Library[/]  [green]{localCount} local[/]  {server}";
-        string drive = m_drive is { } d ? $"   [grey]·[/]  {Markup.Escape(d.DisplayName)} [grey]{Markup.Escape(d.MediaType ?? "no media")}[/]" : "";
+        string drive = m_drive is { } d ? $"   [grey]·[/]  {Markup.Escape(d.DisplayName)}  [grey]{Markup.Escape(d.MediaSummary)}[/]" : "";
         if (mode == EMode.Search) {
             return $"[grey]Search[/]  {Markup.Escape(m_filter)}[blink]▌[/]";
         }
@@ -541,6 +567,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         EMode.Burning => "[grey]burning… please wait  ·  [[ctrl-c]] ignored[/]",
         EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
         EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
+        EMode.ConfirmBurn => "[yellow]! Disc is not blank — burn will likely coaster.[/]  [[y]] burn anyway   [[n]] cancel",
         _ => "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[q]] quit[/]"
     };
 
