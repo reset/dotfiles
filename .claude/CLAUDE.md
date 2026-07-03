@@ -133,20 +133,35 @@ Configuration is layered — each layer has a job:
 
 `~/.ssh/config` is not tracked. Reconstruct on a fresh machine:
 
-### Home server via Cloudflare tunnel
+### Home servers via Cloudflare tunnel
 
-`linux-build-1` (the home media server at `192.168.1.28`) is reachable over the internet through a Cloudflare tunnel published as `ssh.reset.dev`. Requires the `cloudflared` brew package (in `~/Brewfile`).
+Two home machines are reachable over the internet through Cloudflare tunnels on the `jamie@vialstudios.com` account (zone `reset.dev`). Convention: each box gets a `<name>.reset.dev` tunnel hostname. Requires the `cloudflared` brew package (in `~/Brewfile`).
+
+- **media** — media server (`linux-build-1`, `192.168.1.28`) → `media.reset.dev` (tunnel `stormbreaker-server`; also serves `www`/`watch`/`reset.dev`).
+- **omg** — SWAPMEAT fleet/game host (`192.168.1.74`) → `omg.reset.dev` (tunnel `omg`; SSH ingress `ssh://localhost:22`, run as the `cloudflared-omg` systemd service).
 
 Add to `~/.ssh/config`:
 
 ```
-Host reset.dev linux-build-1
-	HostName ssh.reset.dev
+# Media server — via tunnel
+Host media media.reset.dev reset.dev linux-build-1
+	HostName media.reset.dev
+	User reset
+	ProxyCommand cloudflared access ssh --hostname %h
+
+# Fleet/game host — LAN-direct at home
+Host omg
+	HostName 192.168.1.74
+	User reset
+
+# Fleet/game host — via tunnel (off-LAN)
+Host omg.reset.dev
+	HostName omg.reset.dev
 	User reset
 	ProxyCommand cloudflared access ssh --hostname %h
 ```
 
-Connect with `ssh reset.dev` (memorable) or `ssh linux-build-1` (machine hostname) — both aliases resolve to the same tunnel. On LAN, `reset@192.168.1.28` still works directly with no tunnel hop.
+Connect with `ssh media` / `ssh omg` (LAN) or `ssh omg.reset.dev` (off-LAN). On LAN, `reset@192.168.1.28` (media) and `reset@192.168.1.74` (omg) still work directly with no tunnel hop.
 
 ## Claude Code Settings
 
