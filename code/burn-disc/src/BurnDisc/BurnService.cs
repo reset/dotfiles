@@ -1,0 +1,122 @@
+using BurnDisc.Cli;
+using BurnDisc.Infrastructure;
+using BurnDisc.Model;
+using BurnDisc.Pipeline;
+using BurnDisc.Ui;
+
+namespace BurnDisc;
+
+//
+// Top-level workflow: scan the drive, resolve the write speed, prepare the
+// image (extract/convert), then either dump the CUE (dry-run) or burn it.
+//
+internal sealed class BurnService {
+    private readonly IDriveScanner m_driveScanner;
+    private readonly IImagePreparer m_preparer;
+    private readonly IBurner m_burner;
+    private readonly IProgressReporter m_reporter;
+
+    public BurnService(IDriveScanner driveScanner, IImagePreparer preparer, IBurner burner, IProgressReporter reporter) {
+        m_driveScanner = driveScanner;
+        m_preparer = preparer;
+        m_burner = burner;
+        m_reporter = reporter;
+    }
+
+    public async Task<int> RunAsync(CliOptions options, CancellationToken cancellationToken = default) {
+        if (!File.Exists(options.InputFile)) {
+            m_reporter.Warn($"File not found: {options.InputFile}");
+            return 1;
+        }
+
+        OpticalDrive? drive = options.DryRun ? null : await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false);
+        int? speed = ResolveSpeed(options, drive);
+
+        m_reporter.Header("burn-disc", BuildHeaderRows(options, drive, speed));
+
+        string workDir = Directory.CreateTempSubdirectory("burn-disc-").FullName;
+        try {
+            PreparedImage? prepared = null;
+            await m_reporter.RunAsync(async scope => {
+                prepared = await m_preparer.PrepareAsync(options.InputFile, workDir, scope, cancellationToken).ConfigureAwait(false);
+                scope.Log(Summarize(prepared));
+                if (!options.DryRun) {
+                    await m_burner.BurnAsync(prepared, speed, scope, cancellationToken).ConfigureAwait(false);
+                }
+            }).ConfigureAwait(false);
+
+            if (options.DryRun) {
+                DumpDryRun(prepared!);
+            } else {
+                m_reporter.Success("Done!");
+            }
+            return 0;
+        } finally {
+            TryDeleteDirectory(workDir);
+        }
+    }
+
+    private int? ResolveSpeed(CliOptions options, OpticalDrive? drive) {
+        if (options.Speed is int requested) {
+            if (drive?.MinWriteSpeed is int min && requested < min) {
+                m_reporter.Warn($"Requested speed {requested}x is below the drive minimum {min}x; cdrdao will use {min}x.");
+            }
+            return requested;
+        }
+
+        if (drive?.MinWriteSpeed is int detected) {
+            m_reporter.Info($"Using drive minimum write speed: {detected}x");
+            return detected;
+        }
+
+        if (!options.DryRun) {
+            m_reporter.Warn("Could not detect drive write speed; the burn tool will use its default.");
+        }
+        return null;
+    }
+
+    private static List<(string Label, string Value)> BuildHeaderRows(CliOptions options, OpticalDrive? drive, int? speed) {
+        List<(string, string)> rows = [("Source", Path.GetFileName(options.InputFile))];
+        if (drive is not null) {
+            rows.Add(("Drive", drive.DisplayName));
+            rows.Add(("Media", drive.MediaType ?? "unknown"));
+        }
+        rows.Add(("Speed", speed is int s ? $"{s}x" : options.DryRun ? "n/a (dry-run)" : "drive default"));
+        return rows;
+    }
+
+    private static string Summarize(PreparedImage image) {
+        string format = image.SourceFormat switch {
+            EImageFormat.Ccd => "CCD/img (--swap)",
+            EImageFormat.Chd => "CHD → bin/cue",
+            EImageFormat.Cue => "bin/cue",
+            EImageFormat.Iso => "ISO",
+            _ => image.SourceFormat.ToString()
+        };
+        string tracks = image.IsIso
+            ? "single data track"
+            : $"{image.Tracks.Count} tracks ({image.Tracks.Count(static t => t.IsData)} data + {image.Tracks.Count(static t => !t.IsData)} audio)";
+        return $"{format} — {tracks}";
+    }
+
+    private static void DumpDryRun(PreparedImage image) {
+        if (image.IsIso) {
+            Console.WriteLine($"ISO: {Path.GetFileName(image.IsoFilePath!)} (no CUE — single data track)");
+            return;
+        }
+        Console.WriteLine($"=== {Path.GetFileName(image.CueFilePath!)} ===");
+        Console.Write(File.ReadAllText(image.CueFilePath!));
+    }
+
+    private static void TryDeleteDirectory(string dir) {
+        try {
+            if (Directory.Exists(dir)) {
+                Directory.Delete(dir, recursive: true);
+            }
+        } catch (IOException) {
+            // best-effort cleanup of a temp dir; ignore
+        } catch (UnauthorizedAccessException) {
+            // ditto
+        }
+    }
+}

@@ -1,0 +1,10 @@
+# Build output
+bin/
+obj/
+dist/
+
+# IDE / tooling
+*.user
+.vs/
+.idea/
+.DS_Store
