@@ -30,7 +30,6 @@ brew "ruby"
 brew "rust"
 brew "shfmt"
 brew "steamguard-cli"
-brew "telnet"
 brew "hashicorp/tap/terraform"
 brew "tmux"
 brew "transmission-cli"
@@ -47,6 +46,8 @@ end
 # macOS-only: formulae with no useful Linux counterpart, GUI casks, Mac App Store.
 if OS.mac?
   tap "jaxxstorm/tap"
+
+  brew "telnet"   # no Linux bottle on Homebrew — use apt on Linux if needed
 
   brew "colima"                       # Docker runtime for macOS; Linux runs Docker native
   brew "mas"                          # Mac App Store CLI
