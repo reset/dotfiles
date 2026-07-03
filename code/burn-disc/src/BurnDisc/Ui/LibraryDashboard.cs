@@ -39,6 +39,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private readonly List<PhaseState> m_phases = [];
     private readonly List<string> m_platformLines = [];
     private string? m_burnLog;
+    private string? m_lastBurnedTitle; // authoritative disc identity for what we burned this session
     private EMode m_mode = EMode.Browse;
     private bool m_resultOk;
     private string? m_resultMessage;
@@ -88,7 +89,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
 
         m_all = [.. m_scanner.ScanLocal()];
         m_serverScan = Task.Run(() => m_scanner.ScanServerAsync(cancellationToken), cancellationToken);
-        m_driveScan = Task.Run(async () => m_drive = await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false), cancellationToken);
+        m_driveScan = Task.Run(async () => ApplyDriveScan(await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false)), cancellationToken);
 
         // Trap Ctrl-C: deliver it to the key loop as input rather than letting it
         // SIGINT the process (and the child cdrdao) mid-burn. Restored on exit.
@@ -239,6 +240,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     internal IReadOnlyList<LibraryItem> FilteredForTest() => CurrentTitles();
     internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
     internal void SetDriveForTest(OpticalDrive? drive) => m_drive = drive;
+    internal void SetLastBurnedForTest(string? title) { lock (m_sync) { m_lastBurnedTitle = title; } }
     internal void HandleKeyForTest(ConsoleKeyInfo key) => DispatchKey(key);
 
     private void HandleBrowseKey(ConsoleKeyInfo key) {
@@ -412,15 +414,29 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         if (m_ejectTask is not null) {
             return;
         }
+        lock (m_sync) {
+            m_lastBurnedTitle = null; // the disc is leaving; forget what we burned
+        }
         m_ejecting = true;
         m_ejectTask = Task.Run(async () => {
             try {
                 _ = await m_processRunner.RunAsync("drutil", ["eject"]).ConfigureAwait(false);
-                m_drive = await m_driveScanner.ScanAsync().ConfigureAwait(false);
+                ApplyDriveScan(await m_driveScanner.ScanAsync().ConfigureAwait(false));
             } catch {
                 // Eject is best-effort; a failure just leaves the drive line as-is.
             }
         });
+    }
+
+    // Applies a drive-scan result. Forgetting the last-burned title when the disc
+    // is gone keeps a swapped-in disc from inheriting the previous one's identity.
+    private void ApplyDriveScan(OpticalDrive? drive) {
+        lock (m_sync) {
+            m_drive = drive;
+            if (drive is null or { MediaType: null }) {
+                m_lastBurnedTitle = null;
+            }
+        }
     }
 
     private void AdoptEject() {
@@ -449,7 +465,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         if (m_driveScan is null or { IsCompleted: true }) {
             m_driveScan = Task.Run(async () => {
                 try {
-                    m_drive = await m_driveScanner.ScanAsync().ConfigureAwait(false);
+                    ApplyDriveScan(await m_driveScanner.ScanAsync().ConfigureAwait(false));
                 } catch {
                     // transient scan failure — keep the last known state
                 }
@@ -505,6 +521,9 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
             }
             Log(prepared.Describe());
             await m_burner.BurnAsync(prepared, speed, this, cancellationToken).ConfigureAwait(false);
+            lock (m_sync) {
+                m_lastBurnedTitle = item.DisplayName; // we know exactly what's on this disc now
+            }
             SetResult(ok: true, $"Burned {item.DisplayName}");
         } catch (OperationCanceledException) {
             SetResult(ok: false, "Burn aborted — the disc is a coaster.");
@@ -587,6 +606,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         string? burnLog;
         string? resultMessage;
         bool resultOk;
+        string? lastBurned;
         lock (m_sync) {
             mode = m_mode;
             localCount = m_all.Count(static i => i.Source == ELibrarySource.Local);
@@ -597,9 +617,10 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
             burnLog = m_burnLog;
             resultMessage = m_resultMessage;
             resultOk = m_resultOk;
+            lastBurned = m_lastBurnedTitle;
         }
 
-        List<IRenderable> rows = [new Markup(StatusLine(localCount, serverCount, serverLoading, mode)), new Rule { Style = Style.Parse("grey15") }];
+        List<IRenderable> rows = [new Markup(StatusLine(localCount, serverCount, serverLoading, mode, lastBurned)), new Rule { Style = Style.Parse("grey15") }];
 
         switch (mode) {
             case EMode.Burning or EMode.ConfirmAbort:
@@ -625,11 +646,21 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         };
     }
 
-    private string StatusLine(int localCount, int serverCount, bool serverLoading, EMode mode) {
+    private string StatusLine(int localCount, int serverCount, bool serverLoading, EMode mode, string? lastBurned) {
         string server = serverLoading ? "[yellow]scanning server…[/]" : $"{serverCount} server";
         string library = $"[grey]Library[/]  [green]{localCount} local[/]  {server}";
-        string driveState = m_ejecting ? "[yellow]ejecting…[/]" : m_drive is { } d ? $"[grey]{Markup.Escape(d.MediaSummary)}[/]" : "";
-        string drive = m_drive is { } dd ? $"   [grey]·[/]  {Markup.Escape(dd.DisplayName)}  {driveState}" : m_ejecting ? $"   [grey]·[/]  {driveState}" : "";
+        string drive;
+        if (m_ejecting) {
+            drive = "   [grey]·[/]  [yellow]ejecting…[/]";
+        } else if (m_drive is { } d) {
+            // Identity we trust: the title we burned this session, else the disc's
+            // volume label (unreliable — often generic mastering boilerplate).
+            string? identity = lastBurned ?? d.VolumeLabel;
+            string idPart = identity is { Length: > 0 } id ? $"  \"{Markup.Escape(id)}\"" : "";
+            drive = $"   [grey]·[/]  {Markup.Escape(d.DisplayName)}  [grey]{Markup.Escape(d.MediaSummary)}{idPart}[/]";
+        } else {
+            drive = "";
+        }
         if (mode == EMode.Search) {
             return $"[grey]Search[/]  {Markup.Escape(m_filter)}[blink]▌[/]";
         }

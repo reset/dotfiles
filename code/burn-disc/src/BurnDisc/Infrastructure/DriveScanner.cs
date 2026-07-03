@@ -108,17 +108,27 @@ internal sealed partial class DriveScanner : IDriveScanner {
     // track's ISO9660 label, which is often generic mastering boilerplate
     // ("MEGADRIVE_GAME_SPECIAL"). Falls back to the first volume found.
     public static string? ExtractVolumeLabel(string mountOutput, string deviceNode) {
-        string? fallback = null;
+        string? audio = null;
+        string? data = null;
         foreach (string line in mountOutput.Split('\n')) {
             Match m = MountLine().Match(line);
-            if (m.Success && m.Groups[1].Value.StartsWith(deviceNode, StringComparison.Ordinal)) {
-                if (m.Groups[3].Value == "cddafs") {
-                    return m.Groups[2].Value.Trim();
-                }
-                fallback ??= m.Groups[2].Value.Trim();
+            if (!m.Success || !m.Groups[1].Value.StartsWith(deviceNode, StringComparison.Ordinal)) {
+                continue;
+            }
+            string label = m.Groups[2].Value.Trim();
+            if (m.Groups[3].Value == "cddafs") {
+                audio ??= label;
+            } else {
+                data ??= label;
             }
         }
-        return fallback;
+        // Prefer the audio volume's title, but skip macOS's generic "Audio CD"
+        // (used when the disc has no CD-Text and no lookup matched); fall back to
+        // the data track's label.
+        if (audio is { } a && !a.Equals("Audio CD", StringComparison.OrdinalIgnoreCase)) {
+            return a;
+        }
+        return data ?? audio;
     }
 
     [GeneratedRegex(@"\s{2,}")]

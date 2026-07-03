@@ -20,7 +20,7 @@ public sealed class LibraryDashboardRenderTests {
             ColorSystem = ColorSystemSupport.NoColors,
             Out = new AnsiConsoleOutput(sink)
         });
-        console.Profile.Width = 100;
+        console.Profile.Width = 200;
         console.Profile.Height = 40;
         console.Write(dashboard.BuildFrame());
         return sink.ToString();
@@ -58,6 +58,19 @@ public sealed class LibraryDashboardRenderTests {
         Assert.Contains("Sonic CD (USA)", output);
         Assert.Contains("Snatcher [proto]", output);
         Assert.Contains("Library", output); // breadcrumb
+    }
+
+    [Fact]
+    public void BuildFrame_ShowsBurnedTitle_OverGenericDiscLabel() {
+        LibraryDashboard dashboard = NewDashboard();
+        // Disc's own label is generic; we burned it, so show what we burned.
+        dashboard.SetDriveForTest(new OpticalDrive("ASUS", "SDRW", "CD-ROM", [10], isBlank: false, usedBytes: 358_500_000, volumeLabel: "Audio CD"));
+        dashboard.SetLastBurnedForTest("Heart of the Alien - Out of This World Parts I and II (USA)");
+
+        string output = Render(dashboard);
+
+        Assert.Contains("Heart of the Alien", output);
+        Assert.DoesNotContain("Audio CD", output);
     }
 
     [Fact]

@@ -28,19 +28,19 @@ internal sealed class OpticalDrive {
     // The slowest advertised speed — safest for aging retro hardware.
     public int? MinWriteSpeed => WriteSpeeds.Count > 0 ? WriteSpeeds.Min() : null;
 
-    // Media type plus blank/used state and the disc's volume label if known,
-    // e.g. "CD-R · blank" or "CD-ROM · has data (320M) · \"FINAL_FIGHT\"".
+    // Media type plus blank/used state, e.g. "CD-R · blank" or
+    // "CD-ROM · has data (320M)". The disc's identity (volume label or the title
+    // we just burned) is composed separately by the caller.
     public string MediaSummary {
         get {
             if (MediaType is null) {
                 return "no media";
             }
-            string state = IsBlank switch {
+            return IsBlank switch {
                 true => $"{MediaType} · blank",
                 false => UsedBytes > 0 ? $"{MediaType} · has data ({Sizes.Human(UsedBytes)})" : $"{MediaType} · has data",
                 null => MediaType
             };
-            return VolumeLabel is { Length: > 0 } label ? $"{state} · \"{label}\"" : state;
         }
     }
 }

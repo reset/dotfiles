@@ -85,9 +85,21 @@ public sealed class DriveScannerTests {
     }
 
     [Fact]
-    public void MediaSummary_IncludesVolumeLabel_WhenPresent() {
+    public void ParseDrutilStatus_CapturesVolumeLabel() {
         OpticalDrive drive = DriveScanner.ParseDrutilStatus(DrutilUsedCdr, "FINAL_FIGHT")!;
-        Assert.Contains("FINAL_FIGHT", drive.MediaSummary);
         Assert.Equal("FINAL_FIGHT", drive.VolumeLabel);
+        Assert.Contains("has data", drive.MediaSummary); // label is composed separately now
+        Assert.DoesNotContain("FINAL_FIGHT", drive.MediaSummary);
+    }
+
+    [Fact]
+    public void ExtractVolumeLabel_SkipsGenericAudioCd_FallingBackToDataLabel() {
+        // Heart of the Alien: no CD-Text/lookup, so the audio volume is the generic
+        // "Audio CD". Prefer the data label over that noise.
+        const string mount = """
+            /dev/disk4s0 on /Volumes/MEGADRIVE_GAME_SPECIAL (cd9660, local, read-only)
+            /dev/disk4 on /Volumes/Audio CD (cddafs, local, read-only)
+            """;
+        Assert.Equal("MEGADRIVE_GAME_SPECIAL", DriveScanner.ExtractVolumeLabel(mount, "/dev/disk4"));
     }
 }
