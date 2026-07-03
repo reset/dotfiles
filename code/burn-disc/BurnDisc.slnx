@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/BurnDisc/BurnDisc.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/BurnDisc.Tests/BurnDisc.Tests.csproj" />
-  </Folder>
-</Solution>
