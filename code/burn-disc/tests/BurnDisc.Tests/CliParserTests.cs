@@ -30,8 +30,10 @@ public sealed class CliParserTests {
     }
 
     [Fact]
-    public void Parse_MissingInputFile_Throws() {
-        Assert.Throws<CliUsageException>(() => CliParser.Parse(["--dry-run"]));
+    public void Parse_NoInputFile_ReturnsNull_ForBrowseMode() {
+        CliOptions options = CliParser.Parse([]);
+        Assert.Null(options.InputFile);
+        Assert.False(options.DryRun);
     }
 
     [Theory]

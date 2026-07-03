@@ -24,22 +24,23 @@ internal sealed class BurnService {
     }
 
     public async Task<int> RunAsync(CliOptions options, CancellationToken cancellationToken = default) {
-        if (!File.Exists(options.InputFile)) {
-            m_reporter.Warn($"File not found: {options.InputFile}");
+        string inputFile = options.InputFile!; // Program only reaches here with a file
+        if (!File.Exists(inputFile)) {
+            m_reporter.Warn($"File not found: {inputFile}");
             return 1;
         }
 
         OpticalDrive? drive = options.DryRun ? null : await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false);
         int? speed = ResolveSpeed(options, drive);
 
-        m_reporter.Header("burn-disc", BuildHeaderRows(options, drive, speed));
+        m_reporter.Header("burn-disc", BuildHeaderRows(inputFile, drive, speed, options));
 
         string workDir = Directory.CreateTempSubdirectory("burn-disc-").FullName;
         try {
             PreparedImage? prepared = null;
             await m_reporter.RunAsync(async scope => {
-                prepared = await m_preparer.PrepareAsync(options.InputFile, workDir, scope, cancellationToken).ConfigureAwait(false);
-                scope.Log(Summarize(prepared));
+                prepared = await m_preparer.PrepareAsync(inputFile, workDir, scope, cancellationToken).ConfigureAwait(false);
+                scope.Log(prepared.Describe());
                 if (!options.DryRun) {
                     await m_burner.BurnAsync(prepared, speed, scope, cancellationToken).ConfigureAwait(false);
                 }
@@ -75,28 +76,14 @@ internal sealed class BurnService {
         return null;
     }
 
-    private static List<(string Label, string Value)> BuildHeaderRows(CliOptions options, OpticalDrive? drive, int? speed) {
-        List<(string, string)> rows = [("Source", Path.GetFileName(options.InputFile))];
+    private static List<(string Label, string Value)> BuildHeaderRows(string inputFile, OpticalDrive? drive, int? speed, CliOptions options) {
+        List<(string, string)> rows = [("Source", Path.GetFileName(inputFile))];
         if (drive is not null) {
             rows.Add(("Drive", drive.DisplayName));
             rows.Add(("Media", drive.MediaType ?? "unknown"));
         }
         rows.Add(("Speed", speed is int s ? $"{s}x" : options.DryRun ? "n/a (dry-run)" : "drive default"));
         return rows;
-    }
-
-    private static string Summarize(PreparedImage image) {
-        string format = image.SourceFormat switch {
-            EImageFormat.Ccd => "CCD/img (--swap)",
-            EImageFormat.Chd => "CHD → bin/cue",
-            EImageFormat.Cue => "bin/cue",
-            EImageFormat.Iso => "ISO",
-            _ => image.SourceFormat.ToString()
-        };
-        string tracks = image.IsIso
-            ? "single data track"
-            : $"{image.Tracks.Count} tracks ({image.Tracks.Count(static t => t.IsData)} data + {image.Tracks.Count(static t => !t.IsData)} audio)";
-        return $"{format} — {tracks}";
     }
 
     private static void DumpDryRun(PreparedImage image) {

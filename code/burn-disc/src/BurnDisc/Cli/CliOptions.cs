@@ -1,14 +1,14 @@
 namespace BurnDisc.Cli;
 
 internal sealed class CliOptions {
-    public CliOptions(string inputFile, int? speed, bool dryRun) {
+    public CliOptions(string? inputFile, int? speed, bool dryRun) {
         InputFile = inputFile;
         Speed = speed;
         DryRun = dryRun;
     }
 
-    public string InputFile { get; }
-    public int? Speed { get; }      // null => auto-detect the drive minimum
+    public string? InputFile { get; }  // null => open the library browser
+    public int? Speed { get; }         // null => auto-detect the drive minimum
     public bool DryRun { get; }
 }
 

@@ -7,14 +7,26 @@ A C# port of the original `~/bin/burn-disc` bash script.
 ## Usage
 
 ```
-burn-disc <file> [--speed N] [--dry-run]
+burn-disc [<file>] [--speed N] [--dry-run]
 ```
+
+Run with **no arguments** to open the full-screen library browser: it scans
+the local library (`~/roms`, override with `LIBRARY_PATH`) and the media
+server (`MEDIA_HOST`/`MEDIA_PATH`), and lets you navigate with vim keys
+(`j/k`, `u/d`, `gg`, `G`), filter with `/`, and burn the selected title with
+`Enter` — server titles download first. All progress renders live in-frame.
+
+Or pass a file to burn it directly:
 
 - **Archives:** `.7z` `.zip` `.rar` (containing a disc image)
 - **Images:** `.bin/.cue` `.chd` `.ccd/.img` `.iso`
 - `--speed N` — burn speed (default: the drive's minimum, safest for aging
   retro hardware). Flags and options are case-insensitive.
 - `--dry-run` — extract and convert only, print the generated CUE, and exit.
+
+The library browser and the direct-file path share the same
+extract → convert → burn pipeline; the browser draws its progress inside the
+full-screen frame, the direct path uses standalone progress bars.
 
 ## Build
 

@@ -37,4 +37,19 @@ internal sealed class PreparedImage {
 
     public static PreparedImage FromIso(string isoFilePath, string sourceLabel) =>
         new(sourceLabel, EImageFormat.Iso, cueFilePath: null, isoFilePath, needsSwap: false, tracks: []);
+
+    // One-line summary of the burnable format and its track layout.
+    public string Describe() {
+        string format = SourceFormat switch {
+            EImageFormat.Ccd => "CCD/img (--swap)",
+            EImageFormat.Chd => "CHD → bin/cue",
+            EImageFormat.Cue => "bin/cue",
+            EImageFormat.Iso => "ISO",
+            _ => SourceFormat.ToString()
+        };
+        string tracks = IsIso
+            ? "single data track"
+            : $"{Tracks.Count} tracks ({Tracks.Count(static t => t.IsData)} data + {Tracks.Count(static t => !t.IsData)} audio)";
+        return $"{format} — {tracks}";
+    }
 }

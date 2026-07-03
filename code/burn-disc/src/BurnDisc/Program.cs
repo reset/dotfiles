@@ -5,9 +5,9 @@ using BurnDisc.Pipeline;
 using BurnDisc.Ui;
 using Microsoft.Extensions.DependencyInjection;
 
-if (args.Length == 0 || CliParser.IsHelpRequested(args)) {
+if (CliParser.IsHelpRequested(args)) {
     Console.Error.WriteLine(CliParser.Usage);
-    return args.Length == 0 ? 1 : 0;
+    return 0;
 }
 
 CliOptions options;
@@ -17,6 +17,11 @@ try {
     Console.Error.WriteLine($"Error: {ex.Message}");
     Console.Error.WriteLine();
     Console.Error.WriteLine(CliParser.Usage);
+    return 1;
+}
+
+if (options.InputFile is null && options.DryRun) {
+    Console.Error.WriteLine("Error: --dry-run needs a file. Run with no arguments to open the browser.");
     return 1;
 }
 
@@ -30,14 +35,20 @@ _ = services.AddSingleton<IDependencyChecker, DependencyChecker>();
 _ = services.AddSingleton<IDriveScanner, DriveScanner>();
 _ = services.AddSingleton<IImagePreparer, ImagePreparer>();
 _ = services.AddSingleton<IBurner, Burner>();
+_ = services.AddSingleton<LibraryConfig>();
+_ = services.AddSingleton<ILibraryScanner, LibraryScanner>();
+_ = services.AddSingleton<LibraryDashboard>();
 _ = services.AddSingleton<IProgressReporter>(_ => interactive ? new DashboardReporter() : new PlainReporter());
 _ = services.AddSingleton<BurnService>();
 
 using ServiceProvider provider = services.BuildServiceProvider();
-BurnService service = provider.GetRequiredService<BurnService>();
 
 try {
-    return await service.RunAsync(options);
+    // No file → open the interactive library browser; otherwise burn the file.
+    if (options.InputFile is null) {
+        return await provider.GetRequiredService<LibraryDashboard>().RunAsync(CancellationToken.None);
+    }
+    return await provider.GetRequiredService<BurnService>().RunAsync(options);
 } catch (ProcessException ex) {
     Console.Error.WriteLine($"Error: {ex.Message}");
     return 1;

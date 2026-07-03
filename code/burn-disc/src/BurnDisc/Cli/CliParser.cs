@@ -8,7 +8,9 @@ namespace BurnDisc.Cli;
 //
 internal static class CliParser {
     public const string Usage = """
-        Usage: burn-disc <file> [--speed N] [--dry-run]
+        Usage: burn-disc [<file>] [--speed N] [--dry-run]
+
+        Run with no file to open the interactive library browser.
 
         Supported formats:
           Archives:   .7z .zip .rar  (containing a disc image)
@@ -56,10 +58,6 @@ internal static class CliParser {
                     inputFile = arg;
                     break;
             }
-        }
-
-        if (inputFile is null) {
-            throw new CliUsageException("No input file given.");
         }
 
         return new CliOptions(inputFile, speed, dryRun);
