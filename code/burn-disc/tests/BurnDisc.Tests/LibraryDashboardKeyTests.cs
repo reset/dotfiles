@@ -15,6 +15,7 @@ public sealed class LibraryDashboardKeyTests {
             processRunner: null!, dependencies: null!, platformDetector: null!, config: new LibraryConfig());
 
     private static ConsoleKeyInfo Char(char c) => new(c, ConsoleKey.None, shift: false, alt: false, control: false);
+    private static ConsoleKeyInfo CtrlC() => new('\u0003', ConsoleKey.C, shift: false, alt: false, control: true);
 
     private static LibraryDashboard Seeded() {
         LibraryDashboard dashboard = NewDashboard();
@@ -48,6 +49,46 @@ public sealed class LibraryDashboardKeyTests {
 
         dashboard.HandleKeyForTest(Char('k'));
         Assert.Equal(1, dashboard.CursorForTest);
+    }
+
+    [Fact]
+    public void Q_PromptsConfirm_ThenYQuits() {
+        LibraryDashboard dashboard = Seeded();
+
+        dashboard.HandleKeyForTest(Char('q'));
+        Assert.True(dashboard.InConfirmQuitForTest);
+        Assert.False(dashboard.QuitRequestedForTest); // not yet — awaiting confirmation
+
+        dashboard.HandleKeyForTest(Char('y'));
+        Assert.True(dashboard.QuitRequestedForTest);
+    }
+
+    [Fact]
+    public void Q_ThenAnythingElse_CancelsQuit() {
+        LibraryDashboard dashboard = Seeded();
+
+        dashboard.HandleKeyForTest(Char('q'));
+        dashboard.HandleKeyForTest(Char('n'));
+
+        Assert.False(dashboard.QuitRequestedForTest);
+        Assert.False(dashboard.InConfirmQuitForTest); // back to browsing
+    }
+
+    [Fact]
+    public void CtrlC_WhileBrowsing_Quits() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.HandleKeyForTest(CtrlC());
+        Assert.True(dashboard.QuitRequestedForTest);
+    }
+
+    [Fact]
+    public void CtrlC_WhileBurning_IsIgnored() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.EnterBurningModeForTest();
+
+        dashboard.HandleKeyForTest(CtrlC());
+
+        Assert.False(dashboard.QuitRequestedForTest); // never interrupt a burn
     }
 
     [Fact]

@@ -17,7 +17,7 @@ namespace BurnDisc.Ui;
 // that writes phase state here under a lock, and the render loop paints it.
 //
 internal sealed partial class LibraryDashboard : IProgressScope {
-    private enum EMode { Browse, Search, Burning, Result }
+    private enum EMode { Browse, Search, Burning, Result, ConfirmQuit }
 
     private const int PollIntervalMs = 50;
 
@@ -82,26 +82,34 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         m_serverScan = Task.Run(() => m_scanner.ScanServerAsync(cancellationToken), cancellationToken);
         m_driveScan = Task.Run(async () => m_drive = await m_driveScanner.ScanAsync(cancellationToken).ConfigureAwait(false), cancellationToken);
 
-        using AlternateScreen screen = AlternateScreen.Enter(enabled: true);
+        // Trap Ctrl-C: deliver it to the key loop as input rather than letting it
+        // SIGINT the process (and the child cdrdao) mid-burn. Restored on exit.
+        bool originalTreatCtrlC = Console.TreatControlCAsInput;
+        Console.TreatControlCAsInput = true;
+        try {
+            using AlternateScreen screen = AlternateScreen.Enter(enabled: true);
 
-        await AnsiConsole.Live(BuildFrame())
-            .AutoClear(false)
-            .Overflow(VerticalOverflow.Ellipsis)
-            .StartAsync(async ctx => {
-                ctx.Refresh();
-                while (!m_quit && !cancellationToken.IsCancellationRequested) {
-                    m_visibleRows = Math.Max(3, TerminalHeight() - 8);
-                    HandleKeys();
-                    AdoptServerScan();
-                    ctx.UpdateTarget(BuildFrame());
+            await AnsiConsole.Live(BuildFrame())
+                .AutoClear(false)
+                .Overflow(VerticalOverflow.Ellipsis)
+                .StartAsync(async ctx => {
                     ctx.Refresh();
-                    try {
-                        await Task.Delay(PollIntervalMs, cancellationToken).ConfigureAwait(false);
-                    } catch (OperationCanceledException) {
-                        break;
+                    while (!m_quit && !cancellationToken.IsCancellationRequested) {
+                        m_visibleRows = Math.Max(3, TerminalHeight() - 8);
+                        HandleKeys();
+                        AdoptServerScan();
+                        ctx.UpdateTarget(BuildFrame());
+                        ctx.Refresh();
+                        try {
+                            await Task.Delay(PollIntervalMs, cancellationToken).ConfigureAwait(false);
+                        } catch (OperationCanceledException) {
+                            break;
+                        }
                     }
-                }
-            }).ConfigureAwait(false);
+                }).ConfigureAwait(false);
+        } finally {
+            Console.TreatControlCAsInput = originalTreatCtrlC;
+        }
 
         return 0;
     }
@@ -128,42 +136,68 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     //
     private void HandleKeys() {
         while (Console.KeyAvailable) {
-            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
-            EMode mode;
-            lock (m_sync) {
-                mode = m_mode;
-            }
-            switch (mode) {
-                case EMode.Search:
-                    HandleSearchKey(key);
-                    break;
-                case EMode.Result:
-                    if (key.KeyChar == 'q' || key.Key == ConsoleKey.Q) {
-                        m_quit = true;
-                    } else {
-                        SetMode(EMode.Browse);
-                    }
-                    break;
-                case EMode.Burning:
-                    break; // input ignored while burning
-                default:
-                    HandleBrowseKey(key);
-                    break;
-            }
+            DispatchKey(Console.ReadKey(intercept: true));
         }
     }
 
-    // Test seams for the key dispatch (the macOS KeyChar/Key.None case).
-    internal bool InSearchModeForTest { get { lock (m_sync) { return m_mode == EMode.Search; } } }
-    internal int CursorForTest => m_cursor;
-    internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
-    internal void HandleKeyForTest(ConsoleKeyInfo key) {
-        if (InSearchModeForTest) {
-            HandleSearchKey(key);
-        } else {
-            HandleBrowseKey(key);
+    // Routes one keypress by mode. Internal so the Ctrl-C and quit-confirm logic
+    // is unit-tested without a terminal.
+    internal void DispatchKey(ConsoleKeyInfo key) {
+        EMode mode;
+        lock (m_sync) {
+            mode = m_mode;
+        }
+
+        // Ctrl-C is trapped (Console.TreatControlCAsInput) so it can't SIGINT a
+        // running cdrdao and coaster the disc: swallowed while burning, a clean
+        // quit when idle.
+        if (IsCtrlC(key)) {
+            if (mode == EMode.Burning) {
+                Log("Ctrl-C ignored — burn in progress");
+            } else {
+                m_quit = true;
+            }
+            return;
+        }
+
+        switch (mode) {
+            case EMode.Search:
+                HandleSearchKey(key);
+                break;
+            case EMode.ConfirmQuit:
+                if (key.KeyChar is 'y' or 'Y' || key.Key == ConsoleKey.Y) {
+                    m_quit = true;
+                } else {
+                    SetMode(EMode.Browse);
+                }
+                break;
+            case EMode.Result:
+                if (key.KeyChar == 'q' || key.Key == ConsoleKey.Q) {
+                    m_quit = true;
+                } else {
+                    SetMode(EMode.Browse);
+                }
+                break;
+            case EMode.Burning:
+                break; // input ignored while burning
+            default:
+                HandleBrowseKey(key);
+                break;
         }
     }
+
+    private static bool IsCtrlC(ConsoleKeyInfo key) =>
+        key.KeyChar == '\u0003' || (key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control));
+
+    // Test seams for the key dispatch (the macOS KeyChar/Key.None case, quit
+    // confirmation, and Ctrl-C handling).
+    internal bool InSearchModeForTest { get { lock (m_sync) { return m_mode == EMode.Search; } } }
+    internal bool InConfirmQuitForTest { get { lock (m_sync) { return m_mode == EMode.ConfirmQuit; } } }
+    internal bool QuitRequestedForTest => m_quit;
+    internal int CursorForTest => m_cursor;
+    internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
+    internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
+    internal void HandleKeyForTest(ConsoleKeyInfo key) => DispatchKey(key);
 
     private void HandleBrowseKey(ConsoleKeyInfo key) {
         int count = Filtered().Count;
@@ -223,7 +257,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
                 SetMode(EMode.Search);
                 break;
             case 'q':
-                m_quit = true;
+                SetMode(EMode.ConfirmQuit);
                 break;
             default:
                 break;
@@ -504,8 +538,9 @@ internal sealed partial class LibraryDashboard : IProgressScope {
 
     private static string FooterLine(EMode mode) => mode switch {
         EMode.Search => "[grey][[type]] filter  [[enter]] apply  [[esc]] clear[/]",
-        EMode.Burning => "[grey]burning… please wait[/]",
+        EMode.Burning => "[grey]burning… please wait  ·  [[ctrl-c]] ignored[/]",
         EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
+        EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
         _ => "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[q]] quit[/]"
     };
 
