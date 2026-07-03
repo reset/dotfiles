@@ -148,13 +148,25 @@ public sealed class LibraryDashboardKeyTests {
     }
 
     [Fact]
-    public void CtrlC_WhileBurning_IsIgnored() {
+    public void CtrlC_WhileBurning_ArmsAbort_DoesNotQuit() {
         LibraryDashboard dashboard = Seeded();
         dashboard.EnterBurningModeForTest();
 
         dashboard.HandleKeyForTest(CtrlC());
 
-        Assert.False(dashboard.QuitRequestedForTest); // never interrupt a burn
+        Assert.False(dashboard.QuitRequestedForTest); // a single Ctrl-C never quits or interrupts
+        Assert.True(dashboard.AbortArmedForTest);      // it arms the abort instead
+    }
+
+    [Fact]
+    public void CtrlC_Twice_WhileBurning_DoesNotQuit() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.EnterBurningModeForTest();
+
+        dashboard.HandleKeyForTest(CtrlC());
+        dashboard.HandleKeyForTest(CtrlC()); // second press aborts the burn task, not the app
+
+        Assert.False(dashboard.QuitRequestedForTest);
     }
 
     [Fact]

@@ -60,6 +60,19 @@ internal sealed class ProcessRunner : IProcessRunner {
         StringBuilder capture = new();
         object sync = new();
 
+        // On cancellation, kill the child (and its tree) so an aborted burn
+        // actually stops cdrdao rather than orphaning it.
+        await using CancellationTokenRegistration registration = cancellationToken.Register(static state => {
+            Process p = (Process)state!;
+            try {
+                if (!p.HasExited) {
+                    p.Kill(entireProcessTree: true);
+                }
+            } catch {
+                // process already gone / not killable — nothing to do
+            }
+        }, process);
+
         Task pumpOut = PumpAsync(process.StandardOutput, capture, onToken, sync, cancellationToken);
         Task pumpErr = PumpAsync(process.StandardError, capture, onToken, sync, cancellationToken);
 

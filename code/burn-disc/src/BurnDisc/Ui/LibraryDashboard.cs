@@ -16,7 +16,7 @@ namespace BurnDisc.Ui;
 // The dashboard is its own IProgressScope: the burn runs on a background task
 // that writes phase state here under a lock, and the render loop paints it.
 //
-internal sealed partial class LibraryDashboard : IProgressScope {
+internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private enum EMode { Browse, Search, Burning, Result, ConfirmQuit, ConfirmBurn }
 
     private const int PollIntervalMs = 50;
@@ -53,6 +53,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     private Task<IReadOnlyList<LibraryItem>>? m_serverScan;
     private Task? m_driveScan;
     private Task? m_burnTask;
+    private CancellationTokenSource? m_burnCts;
+    private bool m_abortArmed; // first Ctrl-C during a burn arms; second aborts
     private LibraryItem? m_pendingBurn; // awaiting non-blank-disc confirmation
     private Task? m_ejectTask;
     private bool m_ejecting;
@@ -158,7 +160,14 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         // quit when idle.
         if (IsCtrlC(key)) {
             if (mode == EMode.Burning) {
-                Log("Ctrl-C ignored — burn in progress");
+                // Two presses to abort: a single stray Ctrl-C can't ruin a disc,
+                // but there's always a way out of a wedged burn.
+                if (m_abortArmed) {
+                    m_burnCts?.Cancel();
+                } else {
+                    m_abortArmed = true;
+                    Log("Press Ctrl-C again to abort the burn (this will ruin the disc).");
+                }
             } else {
                 m_quit = true;
             }
@@ -214,6 +223,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
     internal bool InBurningForTest { get { lock (m_sync) { return m_mode == EMode.Burning; } } }
     internal bool QuitRequestedForTest => m_quit;
     internal bool EjectingForTest => m_ejecting;
+    internal bool AbortArmedForTest => m_abortArmed;
     internal string? NoticeForTest => m_notice;
     internal int CursorForTest => m_cursor;
     internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
@@ -298,6 +308,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         m_cursor = LibraryView.Clamp(m_cursor + delta, 0, Math.Max(0, count - 1));
     }
 
+    public void Dispose() => m_burnCts?.Dispose();
+
     private void HandleSearchKey(ConsoleKeyInfo key) {
         char c = key.KeyChar;
 
@@ -378,8 +390,11 @@ internal sealed partial class LibraryDashboard : IProgressScope {
             m_resultMessage = null;
             m_mode = EMode.Burning;
         }
+        m_abortArmed = false;
+        m_burnCts?.Dispose();
+        m_burnCts = new CancellationTokenSource();
         int? speed = m_drive?.MinWriteSpeed;
-        m_burnTask = Task.Run(() => BurnItemAsync(item, speed, CancellationToken.None));
+        m_burnTask = Task.Run(() => BurnItemAsync(item, speed, m_burnCts.Token));
     }
 
     private async Task BurnItemAsync(LibraryItem item, int? speed, CancellationToken cancellationToken) {
@@ -402,6 +417,8 @@ internal sealed partial class LibraryDashboard : IProgressScope {
             Log(prepared.Describe());
             await m_burner.BurnAsync(prepared, speed, this, cancellationToken).ConfigureAwait(false);
             SetResult(ok: true, $"Burned {item.DisplayName}");
+        } catch (OperationCanceledException) {
+            SetResult(ok: false, "Burn aborted — the disc is a coaster.");
         } catch (Exception ex) {
             SetResult(ok: false, ex.Message);
         } finally {
@@ -610,7 +627,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
 
     private static string FooterLine(EMode mode) => mode switch {
         EMode.Search => "[grey][[type]] filter  [[enter]] apply  [[esc]] clear[/]",
-        EMode.Burning => "[grey]burning… please wait  ·  [[ctrl-c]] ignored[/]",
+        EMode.Burning => "[grey]burning… please wait  ·  [[ctrl-c]] [[ctrl-c]] abort[/]",
         EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
         EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
         EMode.ConfirmBurn => "[yellow]! Disc is not blank — burn will likely coaster.[/]  [[y]] burn anyway   [[n]] cancel",
