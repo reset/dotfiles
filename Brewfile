@@ -1,6 +1,7 @@
 # Cross-platform CLI tools — installed via Homebrew on both macOS and Linux.
 # macOS-only formulae, GUI casks, and Mac App Store apps are guarded below so
 # `brew bundle` stays clean on a Linux host (linuxbrew).
+tap "hashicorp/tap"
 brew "awscli"
 brew "azure-cli"
 brew "bash"
@@ -30,7 +31,7 @@ brew "rust"
 brew "shfmt"
 brew "steamguard-cli"
 brew "telnet"
-brew "terraform"
+brew "hashicorp/tap/terraform"
 brew "tmux"
 brew "transmission-cli"
 brew "weechat"
