@@ -31,7 +31,7 @@ publish: ## Compile a release binary to dist/burn-disc
 
 .PHONY: install
 install: publish ## Publish and point ~/bin/burn-disc at the release binary
-	@printf '#!/usr/bin/env bash\nset -euo pipefail\nexec "$(HOME)/code/burn-disc/$(BINARY)" "$$@"\n' > $(SHIM)
+	@printf '#!/usr/bin/env bash\nset -euo pipefail\nbin="$(HOME)/code/burn-disc/$(BINARY)"\n[[ -x "$$bin" ]] || { echo >&2 "burn-disc not built — run: make -C ~/code/burn-disc publish"; exit 1; }\nexec "$$bin" "$$@"\n' > $(SHIM)
 	@chmod +x $(SHIM)
 	@echo "Installed shim -> $(SHIM)"
 
