@@ -29,8 +29,11 @@ public sealed class LibraryDashboardRenderTests {
     [Fact]
     public void BuildFrame_RendersTitlesWithMarkupCharacters_WithoutThrowing() {
         LibraryDashboard dashboard = NewDashboard();
+        // The first item is the selected row (cursor 0); give it a platform so
+        // the selected-row branch renders the bracketed "[Sega CD]" tag — the
+        // markup that must be escaped, not parsed as a style.
         dashboard.SeedForTest([
-            new LibraryItem("Sonic CD (USA)", ELibrarySource.Local, "/roms/Sonic CD (USA).7z", 415_875_370),
+            new LibraryItem("Sonic CD (USA)", ELibrarySource.Local, "/roms/Sega CD/Sonic CD (USA).7z", 415_875_370, EPlatform.SegaCd),
             new LibraryItem("Snatcher [proto]", ELibrarySource.Server, "Snatcher [proto].7z", 463_654_039),
         ]);
 
@@ -40,6 +43,7 @@ public sealed class LibraryDashboardRenderTests {
         Assert.Contains("Sonic CD (USA)", output);
         Assert.Contains("Snatcher [proto]", output);
         Assert.Contains("local", output);
+        Assert.Contains("Sega CD", output); // platform tag on the selected row rendered without throwing
     }
 
     [Fact]

@@ -461,7 +461,7 @@ internal sealed partial class LibraryDashboard : IProgressScope {
         string src = item.SourceLabel.PadRight(6);
         string plat = item.Platform == EPlatform.Unknown ? "" : $"[{Platform.DisplayName(item.Platform)}]";
         if (selected) {
-            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}  {plat}[/]";
+            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}  {Markup.Escape(plat)}[/]";
         }
         return $"  {Markup.Escape(name)}  [grey]{size}[/]  [grey]{src}[/]  [grey]{Markup.Escape(plat)}[/]";
     }
