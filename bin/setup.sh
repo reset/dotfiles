@@ -24,6 +24,12 @@ function configure_system () {
 
 function install_homebrew () {
   if ! command -v brew &> /dev/null; then
+    # The Homebrew installer needs curl/git/build tools. On a fresh Linux box some
+    # (notably curl) may be absent, so install them before the installer runs —
+    # this function runs before install_packages, so we can't rely on that lane.
+    if [[ $OSTYPE != 'darwin'* ]]; then
+      sudo apt-get update && sudo apt-get install -y build-essential curl file git procps
+    fi
     echo "Installing Homebrew..."
     curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash
   fi
