@@ -20,6 +20,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private enum EMode { Browse, Search, Burning, Result, ConfirmQuit, ConfirmBurn, ConfirmAbort }
 
     private const int PollIntervalMs = 50;
+    private const int DriveRescanTicks = 60; // ~3s at the poll interval
 
     private readonly ILibraryScanner m_scanner;
     private readonly IDriveScanner m_driveScanner;
@@ -52,6 +53,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private OpticalDrive? m_drive;
     private Task<IReadOnlyList<LibraryItem>>? m_serverScan;
     private Task? m_driveScan;
+    private int m_scanTicks; // throttles the idle drive re-scan
     private Task? m_burnTask;
     private CancellationTokenSource? m_burnCts;
     private LibraryItem? m_pendingBurn; // awaiting non-blank-disc confirmation
@@ -104,6 +106,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
                         HandleKeys();
                         AdoptServerScan();
                         AdoptEject();
+                        MaybeRescanDrive();
                         ctx.UpdateTarget(BuildFrame());
                         ctx.Refresh();
                         try {
@@ -262,7 +265,14 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
                 }
                 return;
             case ConsoleKey.Escape:
-                SetMode(EMode.ConfirmQuit); // Escape mirrors 'q'
+                // Escape backs out: clear an active search filter first, else quit.
+                if (m_filter.Length > 0) {
+                    m_filter = "";
+                    m_cursor = 0;
+                    m_scroll = 0;
+                } else {
+                    SetMode(EMode.ConfirmQuit);
+                }
                 return;
             default:
                 break;
@@ -369,6 +379,33 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         if (m_ejectTask is { IsCompleted: true }) {
             m_ejecting = false;
             m_ejectTask = null;
+        }
+    }
+
+    // Periodically re-scan the drive while idle so the media line stays current
+    // as discs are inserted, burned, or ejected. Skipped mid-burn (the drive is
+    // busy being written) and while an eject is in flight.
+    private void MaybeRescanDrive() {
+        EMode mode;
+        lock (m_sync) {
+            mode = m_mode;
+        }
+        if (mode is EMode.Burning or EMode.ConfirmAbort || m_ejecting) {
+            m_scanTicks = 0;
+            return;
+        }
+        if (++m_scanTicks < DriveRescanTicks) {
+            return;
+        }
+        m_scanTicks = 0;
+        if (m_driveScan is null or { IsCompleted: true }) {
+            m_driveScan = Task.Run(async () => {
+                try {
+                    m_drive = await m_driveScanner.ScanAsync().ConfigureAwait(false);
+                } catch {
+                    // transient scan failure — keep the last known state
+                }
+            });
         }
     }
 

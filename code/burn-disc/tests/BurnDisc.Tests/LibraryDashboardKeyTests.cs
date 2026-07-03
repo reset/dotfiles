@@ -16,6 +16,7 @@ public sealed class LibraryDashboardKeyTests {
 
     private static ConsoleKeyInfo Char(char c) => new(c, ConsoleKey.None, shift: false, alt: false, control: false);
     private static ConsoleKeyInfo Enter() => new('\r', ConsoleKey.Enter, shift: false, alt: false, control: false);
+    private static ConsoleKeyInfo Escape() => new('\u001b', ConsoleKey.Escape, shift: false, alt: false, control: false);
     private static OpticalDrive Drive(bool? isBlank) => new("ASUS", "SDRW", "CD-R", [10], isBlank, usedBytes: isBlank == false ? 100_000 : 0);
     private static OpticalDrive NoDisc() => new("ASUS", "SDRW", mediaType: null, [10], isBlank: null, usedBytes: 0);
     private static ConsoleKeyInfo CtrlC() => new('\u0003', ConsoleKey.C, shift: false, alt: false, control: true);
@@ -141,10 +142,27 @@ public sealed class LibraryDashboardKeyTests {
     }
 
     [Fact]
-    public void Escape_MirrorsQ_PromptingQuitConfirm() {
+    public void Escape_WithNoFilter_PromptsQuitConfirm() {
         LibraryDashboard dashboard = Seeded();
-        dashboard.HandleKeyForTest(new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, shift: false, alt: false, control: false));
+        dashboard.HandleKeyForTest(Escape());
         Assert.True(dashboard.InConfirmQuitForTest);
+    }
+
+    [Fact]
+    public void Escape_WithActiveFilter_ClearsSearchInsteadOfQuitting() {
+        LibraryDashboard dashboard = Seeded();
+        // Search for "son", apply, then Escape from the filtered browse view.
+        dashboard.HandleKeyForTest(Char('/'));
+        foreach (char c in "son") {
+            dashboard.HandleKeyForTest(Char(c));
+        }
+        dashboard.HandleKeyForTest(Enter());
+        Assert.Single(dashboard.FilteredForTest());
+
+        dashboard.HandleKeyForTest(Escape());
+
+        Assert.False(dashboard.InConfirmQuitForTest);        // did not try to quit
+        Assert.Equal(3, dashboard.FilteredForTest().Count);  // filter cleared
     }
 
     [Theory]
