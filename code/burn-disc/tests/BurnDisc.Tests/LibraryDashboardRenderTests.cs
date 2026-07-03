@@ -27,29 +27,43 @@ public sealed class LibraryDashboardRenderTests {
     }
 
     [Fact]
-    public void BuildFrame_RendersTitlesWithMarkupCharacters_WithoutThrowing() {
+    public void BuildFrame_PlatformMenu_RendersPlatformNames() {
         LibraryDashboard dashboard = NewDashboard();
-        // The first item is the selected row (cursor 0); give it a platform so
-        // the selected-row branch renders the bracketed "[Sega CD]" tag — the
-        // markup that must be escaped, not parsed as a style.
         dashboard.SeedForTest([
             new LibraryItem("Sonic CD (USA)", ELibrarySource.Local, "/roms/Sega CD/Sonic CD (USA).7z", 415_875_370, EPlatform.SegaCd),
-            new LibraryItem("Snatcher [proto]", ELibrarySource.Server, "Snatcher [proto].7z", 463_654_039),
+            new LibraryItem("Nights", ELibrarySource.Local, "/roms/Saturn/Nights.chd", 500_000_000, EPlatform.Saturn),
         ]);
 
         string output = Render(dashboard);
 
         Assert.Contains("burn-disc", output);
+        Assert.Contains("Sega CD", output);
+        Assert.Contains("Saturn", output);
+        Assert.Contains("title", output); // "N title(s)" count column
+    }
+
+    [Fact]
+    public void BuildFrame_TitleList_RendersTitlesWithMarkupCharacters_WithoutThrowing() {
+        LibraryDashboard dashboard = NewDashboard();
+        // Both under one platform; open it, then the selected row renders a title
+        // with markup characters ('[' / '(') that must be escaped, not parsed.
+        dashboard.SeedForTest([
+            new LibraryItem("Sonic CD (USA)", ELibrarySource.Local, "/roms/Sega CD/Sonic CD (USA).7z", 415_875_370, EPlatform.SegaCd),
+            new LibraryItem("Snatcher [proto]", ELibrarySource.Server, "Snatcher [proto].7z", 463_654_039, EPlatform.SegaCd),
+        ]);
+        dashboard.HandleKeyForTest(new ConsoleKeyInfo('\r', ConsoleKey.Enter, shift: false, alt: false, control: false));
+
+        string output = Render(dashboard);
+
         Assert.Contains("Sonic CD (USA)", output);
         Assert.Contains("Snatcher [proto]", output);
-        Assert.Contains("local", output);
-        Assert.Contains("Sega CD", output); // platform tag on the selected row rendered without throwing
+        Assert.Contains("Library", output); // breadcrumb
     }
 
     [Fact]
     public void BuildFrame_EmptyLibrary_RendersPlaceholder() {
         LibraryDashboard dashboard = NewDashboard();
         dashboard.SeedForTest([]);
-        Assert.Contains("no matching titles", Render(dashboard));
+        Assert.Contains("scanning for titles", Render(dashboard));
     }
 }

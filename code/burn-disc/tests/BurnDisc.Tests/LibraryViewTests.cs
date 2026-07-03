@@ -25,6 +25,24 @@ public sealed class LibraryViewTests {
         Assert.Equal(ELibrarySource.Server, result[^1].Source);
     }
 
+    [Fact]
+    public void GroupByPlatform_CountsPerPlatform_OtherLast() {
+        LibraryItem[] items = [
+            new("Sonic CD", ELibrarySource.Local, "a", 1, EPlatform.SegaCd),
+            new("Snatcher", ELibrarySource.Local, "b", 1, EPlatform.SegaCd),
+            new("Nights", ELibrarySource.Local, "c", 1, EPlatform.Saturn),
+            new("mystery", ELibrarySource.Local, "d", 1, EPlatform.Unknown),
+        ];
+
+        var groups = LibraryView.GroupByPlatform(items)
+            .Select(g => (Name: Platform.DisplayName(g.Platform), g.Count))
+            .ToList();
+
+        Assert.Equal(("Saturn", 1), groups[0]);   // alphabetical
+        Assert.Equal(("Sega CD", 2), groups[1]);
+        Assert.Equal(("Other", 1), groups[^1]);    // Unknown ("Other") sorts last
+    }
+
     [Theory]
     // count, cursor, visible, currentScroll -> expected scroll
     [InlineData(3, 0, 10, 0, 0)]     // everything fits

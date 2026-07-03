@@ -22,6 +22,20 @@ internal static class LibraryView {
     }
 
     //
+    // Group the library by platform for the top-level menu: one entry per
+    // platform present, with its title count, ordered alphabetically with the
+    // catch-all "Other" (Unknown) last.
+    //
+    public static IReadOnlyList<(EPlatform Platform, int Count)> GroupByPlatform(IReadOnlyList<LibraryItem> items) {
+        return items
+            .GroupBy(static i => i.Platform)
+            .Select(static g => (Platform: g.Key, Count: g.Count()))
+            .OrderBy(static g => g.Platform == EPlatform.Unknown ? 1 : 0)
+            .ThenBy(static g => Model.Platform.DisplayName(g.Platform), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    //
     // Given a list, a cursor index, and how many rows are visible, return the
     // scroll offset (index of the first visible row) that keeps the cursor on
     // screen while moving as little as possible.

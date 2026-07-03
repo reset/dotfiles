@@ -44,6 +44,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     private string? m_resultMessage;
 
     // Render-loop-only state.
+    private EPlatform? m_selectedPlatform; // null = at the top-level platform menu
     private string m_filter = "";
     private int m_cursor;
     private int m_scroll;
@@ -234,15 +235,17 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
     internal bool InConfirmAbortForTest { get { lock (m_sync) { return m_mode == EMode.ConfirmAbort; } } }
     internal string? NoticeForTest => m_notice;
     internal int CursorForTest => m_cursor;
-    internal IReadOnlyList<LibraryItem> FilteredForTest() => Filtered();
+    internal bool AtPlatformListForTest => m_selectedPlatform is null;
+    internal IReadOnlyList<LibraryItem> FilteredForTest() => CurrentTitles();
     internal void EnterBurningModeForTest() { lock (m_sync) { m_mode = EMode.Burning; } }
     internal void SetDriveForTest(OpticalDrive? drive) => m_drive = drive;
     internal void HandleKeyForTest(ConsoleKeyInfo key) => DispatchKey(key);
 
     private void HandleBrowseKey(ConsoleKeyInfo key) {
-        int count = Filtered().Count;
+        int count = CurrentListCount();
         int page = Math.Max(1, m_visibleRows - 1);
         char c = key.KeyChar;
+        bool atPlatformList = m_selectedPlatform is null;
 
         m_notice = null; // any keypress clears a stale notice; RequestBurn may re-set it
 
@@ -261,15 +264,18 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
                 return;
             case ConsoleKey.Enter:
                 if (count > 0) {
-                    RequestBurn(Filtered()[Math.Clamp(m_cursor, 0, count - 1)]);
+                    Activate(Math.Clamp(m_cursor, 0, count - 1));
                 }
                 return;
             case ConsoleKey.Escape:
-                // Escape backs out: clear an active search filter first, else quit.
+                // Escape backs out one level: clear an active filter, else leave the
+                // platform (back to the top-level menu), else quit.
                 if (m_filter.Length > 0) {
                     m_filter = "";
                     m_cursor = 0;
                     m_scroll = 0;
+                } else if (!atPlatformList) {
+                    SelectPlatform(null);
                 } else {
                     SetMode(EMode.ConfirmQuit);
                 }
@@ -306,7 +312,9 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
                 }
                 break;
             case '/':
-                SetMode(EMode.Search);
+                if (!atPlatformList) {
+                    SetMode(EMode.Search); // search applies within a platform's titles
+                }
                 break;
             case 'e':
                 StartEject();
@@ -317,6 +325,46 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
             default:
                 break;
         }
+    }
+
+    // Opens the highlighted platform, or burns the highlighted title.
+    private void Activate(int index) {
+        if (m_selectedPlatform is null) {
+            IReadOnlyList<(EPlatform Platform, int Count)> groups = LibraryView.GroupByPlatform(Snapshot());
+            if (index < groups.Count) {
+                SelectPlatform(groups[index].Platform);
+            }
+        } else {
+            IReadOnlyList<LibraryItem> titles = CurrentTitles();
+            if (index < titles.Count) {
+                RequestBurn(titles[index]);
+            }
+        }
+    }
+
+    private void SelectPlatform(EPlatform? platform) {
+        m_selectedPlatform = platform;
+        m_filter = "";
+        m_cursor = 0;
+        m_scroll = 0;
+    }
+
+    private int CurrentListCount() =>
+        m_selectedPlatform is null ? LibraryView.GroupByPlatform(Snapshot()).Count : CurrentTitles().Count;
+
+    private List<LibraryItem> Snapshot() {
+        lock (m_sync) {
+            return [.. m_all];
+        }
+    }
+
+    // Titles in the selected platform, narrowed by the active search filter.
+    private IReadOnlyList<LibraryItem> CurrentTitles() {
+        if (m_selectedPlatform is not { } platform) {
+            return [];
+        }
+        List<LibraryItem> inPlatform = Snapshot().Where(i => i.Platform == platform).ToList();
+        return LibraryView.Filter(inPlatform, m_filter);
     }
 
     private void MoveCursor(int delta, int count) {
@@ -518,13 +566,6 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         }
     }
 
-    private IReadOnlyList<LibraryItem> Filtered() {
-        List<LibraryItem> snapshot;
-        lock (m_sync) {
-            snapshot = [.. m_all];
-        }
-        return LibraryView.Filter(snapshot, m_filter);
-    }
 
     // Test seam: seed the item list so a render can be exercised headlessly.
     internal void SeedForTest(IReadOnlyList<LibraryItem> items, bool serverLoading = false) {
@@ -573,7 +614,7 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         }
 
         rows.Add(new Rule { Style = Style.Parse("grey15") });
-        rows.Add(new Markup(FooterLine(mode)));
+        rows.Add(new Markup(FooterLine(mode, m_selectedPlatform is null)));
 
         return new Panel(new Rows(rows)) {
             Header = new PanelHeader("[bold]burn-disc[/]"),
@@ -591,23 +632,50 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         if (mode == EMode.Search) {
             return $"[grey]Search[/]  {Markup.Escape(m_filter)}[blink]▌[/]";
         }
+        // Breadcrumb: library counts at the top level, the platform name once opened.
+        string head = m_selectedPlatform is { } platform
+            ? $"[grey]Library ›[/] {Markup.Escape(Platform.DisplayName(platform))}"
+            : library;
         string notice = m_notice is { Length: > 0 } n ? $"   [red]! {Markup.Escape(n)}[/]" : "";
-        return library + drive + notice;
+        return head + drive + notice;
     }
 
-    private List<IRenderable> ListBody() {
-        IReadOnlyList<LibraryItem> items = Filtered();
+    private List<IRenderable> ListBody() =>
+        m_selectedPlatform is null ? PlatformListBody() : TitleListBody();
+
+    private List<IRenderable> PlatformListBody() {
+        IReadOnlyList<(EPlatform Platform, int Count)> groups = LibraryView.GroupByPlatform(Snapshot());
+        int count = groups.Count;
+        m_cursor = LibraryView.Clamp(m_cursor, 0, Math.Max(0, count - 1));
+        m_scroll = LibraryView.ScrollFor(count, m_cursor, m_visibleRows, m_scroll);
+
+        int nameWidth = Math.Clamp(TerminalWidth() - 24, 12, 40);
+        List<IRenderable> lines = [];
+        if (count == 0) {
+            lines.Add(new Markup("[grey]  (scanning for titles…)[/]"));
+        }
+        for (int i = 0; i < m_visibleRows; i++) {
+            int index = m_scroll + i;
+            if (index >= count) {
+                lines.Add(new Text(""));
+                continue;
+            }
+            lines.Add(new Markup(PlatformRowMarkup(groups[index], index == m_cursor, nameWidth)));
+        }
+        return lines;
+    }
+
+    private List<IRenderable> TitleListBody() {
+        IReadOnlyList<LibraryItem> items = CurrentTitles();
         int count = items.Count;
         m_cursor = LibraryView.Clamp(m_cursor, 0, Math.Max(0, count - 1));
         m_scroll = LibraryView.ScrollFor(count, m_cursor, m_visibleRows, m_scroll);
 
-        int nameWidth = Math.Clamp(TerminalWidth() - 34, 12, 56);
+        int nameWidth = Math.Clamp(TerminalWidth() - 24, 12, 60);
         List<IRenderable> lines = [];
-
         if (count == 0) {
             lines.Add(new Markup("[grey]  (no matching titles)[/]"));
         }
-
         for (int i = 0; i < m_visibleRows; i++) {
             int index = m_scroll + i;
             if (index >= count) {
@@ -619,15 +687,23 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         return lines;
     }
 
+    private static string PlatformRowMarkup((EPlatform Platform, int Count) group, bool selected, int nameWidth) {
+        string name = Truncate(Platform.DisplayName(group.Platform), nameWidth).PadRight(nameWidth);
+        string count = $"{group.Count} title{(group.Count == 1 ? "" : "s")}";
+        if (selected) {
+            return $"[black on white]› {Markup.Escape(name)}  {count}[/]";
+        }
+        return $"  {Markup.Escape(name)}  [grey]{count}[/]";
+    }
+
     private static string RowMarkup(LibraryItem item, bool selected, int nameWidth) {
         string name = Truncate(item.DisplayName, nameWidth).PadRight(nameWidth);
         string size = item.SizeDisplay.PadLeft(6);
         string src = item.SourceLabel.PadRight(6);
-        string plat = item.Platform == EPlatform.Unknown ? "" : $"[{Platform.DisplayName(item.Platform)}]";
         if (selected) {
-            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}  {Markup.Escape(plat)}[/]";
+            return $"[black on white]› {Markup.Escape(name)}  {size}  {src}[/]";
         }
-        return $"  {Markup.Escape(name)}  [grey]{size}[/]  [grey]{src}[/]  [grey]{Markup.Escape(plat)}[/]";
+        return $"  {Markup.Escape(name)}  [grey]{size}[/]  [grey]{src}[/]";
     }
 
     private List<IRenderable> BurnBody(List<PhaseState> phases, List<string> platformLines, string? burnLog) {
@@ -666,14 +742,16 @@ internal sealed partial class LibraryDashboard : IProgressScope, IDisposable {
         return PadTo(lines, m_visibleRows);
     }
 
-    private static string FooterLine(EMode mode) => mode switch {
+    private static string FooterLine(EMode mode, bool atPlatformList) => mode switch {
         EMode.Search => "[grey][[type]] filter  [[enter]] apply  [[esc]] clear[/]",
         EMode.Burning => "[grey]burning… please wait  ·  [[x]]/[[esc]] abort[/]",
         EMode.ConfirmAbort => "[yellow]Abort burn? This ruins the disc.[/]  [[y]] yes   [[n]] no",
         EMode.Result => "[grey][[any key]] back  [[q]] quit[/]",
         EMode.ConfirmQuit => "[yellow]Quit?[/]  [[y]] yes   [[n]] no",
         EMode.ConfirmBurn => "[yellow]! Disc is not blank — burn will likely coaster.[/]  [[y]] burn anyway   [[n]] cancel",
-        _ => "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[e]] eject  [[q]] quit[/]"
+        _ => atPlatformList
+            ? "[grey][[j/k]] move  [[enter]] open  [[e]] eject  [[q]] quit[/]"
+            : "[grey][[j/k]] move  [[/]] search  [[enter]] burn  [[esc]] back  [[e]] eject  [[q]] quit[/]"
     };
 
     private static List<IRenderable> PadTo(List<IRenderable> lines, int target) {

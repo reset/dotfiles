@@ -24,16 +24,45 @@ public sealed class LibraryDashboardKeyTests {
     private static LibraryDashboard Seeded() {
         LibraryDashboard dashboard = NewDashboard();
         dashboard.SeedForTest([
-            new LibraryItem("Final Fight CD", ELibrarySource.Local, "/roms/Final Fight CD.7z", 100),
-            new LibraryItem("Sonic CD", ELibrarySource.Local, "/roms/Sonic CD.7z", 100),
-            new LibraryItem("Snatcher", ELibrarySource.Local, "/roms/Snatcher.7z", 100),
+            new LibraryItem("Final Fight CD", ELibrarySource.Local, "/roms/Sega CD/Final Fight CD.7z", 100, EPlatform.SegaCd),
+            new LibraryItem("Sonic CD", ELibrarySource.Local, "/roms/Sega CD/Sonic CD.7z", 100, EPlatform.SegaCd),
+            new LibraryItem("Snatcher", ELibrarySource.Local, "/roms/Sega CD/Snatcher.7z", 100, EPlatform.SegaCd),
         ]);
         return dashboard;
     }
 
+    // Titles live under a platform now; open the (single, seeded) platform first.
+    private static LibraryDashboard SeededInPlatform() {
+        LibraryDashboard dashboard = Seeded();
+        dashboard.HandleKeyForTest(Enter());
+        return dashboard;
+    }
+
+    [Fact]
+    public void PlatformList_EnterOpensPlatform_RevealingTitles() {
+        LibraryDashboard dashboard = Seeded();
+        Assert.True(dashboard.AtPlatformListForTest);
+        Assert.Empty(dashboard.FilteredForTest()); // no titles until a platform is opened
+
+        dashboard.HandleKeyForTest(Enter());
+
+        Assert.False(dashboard.AtPlatformListForTest);
+        Assert.Equal(3, dashboard.FilteredForTest().Count);
+    }
+
+    [Fact]
+    public void Escape_InTitleList_NoFilter_ReturnsToPlatformList() {
+        LibraryDashboard dashboard = SeededInPlatform();
+
+        dashboard.HandleKeyForTest(Escape());
+
+        Assert.True(dashboard.AtPlatformListForTest);
+        Assert.False(dashboard.InConfirmQuitForTest); // backs out to platforms, doesn't quit
+    }
+
     [Fact]
     public void Slash_AsKeyCharWithKeyNone_EntersSearch() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         Assert.False(dashboard.InSearchModeForTest);
 
         dashboard.HandleKeyForTest(Char('/'));
@@ -43,7 +72,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void JAndK_AsKeyChar_MoveCursor() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
 
         dashboard.HandleKeyForTest(Char('j'));
         Assert.Equal(1, dashboard.CursorForTest);
@@ -80,7 +109,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void Enter_WithNonBlankDisc_AsksBurnConfirmation() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         dashboard.SetDriveForTest(Drive(isBlank: false));
 
         dashboard.HandleKeyForTest(Enter());
@@ -91,7 +120,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void BurnConfirm_N_CancelsBackToBrowse() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         dashboard.SetDriveForTest(Drive(isBlank: false));
 
         dashboard.HandleKeyForTest(Enter());
@@ -103,7 +132,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void Enter_WithNoDisc_RefusesAndNotifies() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         dashboard.SetDriveForTest(NoDisc());
 
         dashboard.HandleKeyForTest(Enter());
@@ -115,7 +144,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void Enter_WithBlankDisc_SkipsConfirmation() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         dashboard.SetDriveForTest(Drive(isBlank: true));
 
         dashboard.HandleKeyForTest(Enter());
@@ -150,8 +179,8 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void Escape_WithActiveFilter_ClearsSearchInsteadOfQuitting() {
-        LibraryDashboard dashboard = Seeded();
-        // Search for "son", apply, then Escape from the filtered browse view.
+        LibraryDashboard dashboard = SeededInPlatform();
+        // Search for "son", apply, then Escape from the filtered title view.
         dashboard.HandleKeyForTest(Char('/'));
         foreach (char c in "son") {
             dashboard.HandleKeyForTest(Char(c));
@@ -213,7 +242,7 @@ public sealed class LibraryDashboardKeyTests {
 
     [Fact]
     public void TypingInSearch_FiltersLive() {
-        LibraryDashboard dashboard = Seeded();
+        LibraryDashboard dashboard = SeededInPlatform();
         dashboard.HandleKeyForTest(Char('/'));
 
         foreach (char c in "son") {

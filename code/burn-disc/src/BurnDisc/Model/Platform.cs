@@ -11,7 +11,7 @@ internal static class Platform {
         EPlatform.PlayStation => "PlayStation",
         EPlatform.Dreamcast => "Dreamcast",
         EPlatform.DataDisc => "Data disc",
-        _ => "Unknown"
+        _ => "Other"
     };
 
     // A one-line burn caveat, or null when there's nothing special to warn about.
