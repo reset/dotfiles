@@ -91,6 +91,12 @@ function setup_home () {
   # Install Plug
   curl -fLo "$HOME/.vim/autoload/plug.vim" --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim
 
+  # Install the plugins .vimrc declares (idempotent — Plug skips what's present).
+  # Without this, first vim launch errors on the base16 colorscheme (E185).
+  # `|| true`: vim -es exits 1 even on success; a failed install shows up as the
+  # E185 on next launch, not here.
+  vim -es -u "$HOME/.vimrc" -i NONE +PlugInstall +qall || true
+
   # Install base16-shell
   if [[ ! -d "$HOME/.config/base16-shell" ]]; then
     git clone https://github.com/chriskempson/base16-shell.git "$HOME/.config/base16-shell"

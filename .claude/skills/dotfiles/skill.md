@@ -218,7 +218,7 @@ These require human-in-the-loop interaction or secrets that aren't in the repo:
   - `~/.config/omg/env` — sourced by `.profile`
   - `~/.config/omg/secrets` — sourced by `.profile`
   - `~/.secrets` — sourced by `.zshrc`
-- **Install vim plugins** — open vim and run `:PlugInstall`. `setup.sh` only downloads `plug.vim`; it doesn't install plugins from `.vimrc`.
+- ~~Install vim plugins~~ — no longer manual: `setup.sh` runs a headless `:PlugInstall` right after downloading `plug.vim`. Only needed by hand after editing the plug list in `.vimrc`.
 - **Sign in to the Mac App Store** — `mas install` requires a logged-in Apple ID. If the App Store hasn't been opened and signed into yet, `mas install` lines fail silently.
 - **Sign in to 1Password, Slack, etc.** — apps installed via cask/mas come up unconfigured.
 

@@ -44,7 +44,8 @@
 
 ## VIM Setup
 
-* Open vim and run `:PlugInstall`
+Nothing manual — `setup.sh` downloads vim-plug and runs `:PlugInstall` headlessly.
+To re-sync plugins after editing `.vimrc`, open vim and run `:PlugInstall`.
 
 ## Claude Code
 
