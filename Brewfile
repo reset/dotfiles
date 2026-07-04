@@ -68,6 +68,7 @@ if OS.mac?
   cask "dotnet-sdk"
   cask "dropbox"
   cask "font-fira-code"
+  cask "font-meslo-lg-nerd-font"
   cask "go-agent"
   cask "google-chrome"
   cask "google-drive"
