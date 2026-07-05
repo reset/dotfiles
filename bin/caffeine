@@ -18,7 +18,7 @@ lid_sleep_disabled() {
 }
 
 cmd_on() {
-    local want_lid="$1"
+    local want_disable_sleep="$1"
 
     if is_running; then
         echo "already on (pid $(cat "$PID_FILE"))"
@@ -26,8 +26,8 @@ cmd_on() {
         # -i: prevent idle sleep (the idle timer fires even on AC power without this)
         # -s: prevent system sleep on AC power (no-op on battery)
         # Neither -i nor -s stops sleep triggered by closing the lid — that's a
-        # separate mechanism. Use `caffeine on --lid` for unattended lid-closed
-        # operation (e.g. the Colima client fleet). Display/disk sleep are left
+        # separate mechanism. Use `caffeine on --disable-sleep` for unattended
+        # lid-closed operation (e.g. the Colima client fleet). Display/disk sleep are left
         # alone — they don't affect keeping the system (or a Colima VM) awake.
         caffeinate -i -s &
         local pid=$!
@@ -36,7 +36,7 @@ cmd_on() {
         echo "on (pid $pid)"
     fi
 
-    if [[ "$want_lid" == "yes" ]]; then
+    if [[ "$want_disable_sleep" == "yes" ]]; then
         # disablesleep is a global system setting, NOT a caffeinate assertion: it
         # survives crashes and reboots and reverts only when set back to 0. We drop
         # a marker so `caffeine off` undoes only what we enabled, never a
@@ -88,11 +88,11 @@ cmd_status() {
     fi
 }
 
-# Echo "yes" if the case-insensitive --lid flag appears among the arguments.
-parse_lid() {
+# Echo "yes" if the case-insensitive --disable-sleep flag appears among the arguments.
+parse_disable_sleep() {
     local arg
     for arg in "$@"; do
-        [[ "$(echo "$arg" | tr '[:upper:]' '[:lower:]')" == "--lid" ]] && { echo "yes"; return; }
+        [[ "$(echo "$arg" | tr '[:upper:]' '[:lower:]')" == "--disable-sleep" ]] && { echo "yes"; return; }
     done
     echo "no"
 }
@@ -100,14 +100,14 @@ parse_lid() {
 cmd="${1:-toggle}"
 shift || true
 case "$(echo "$cmd" | tr '[:upper:]' '[:lower:]')" in
-    on)     cmd_on "$(parse_lid "$@")" ;;
+    on)     cmd_on "$(parse_disable_sleep "$@")" ;;
     off)    cmd_off ;;
     status) cmd_status ;;
     toggle)
-        if is_running; then cmd_off; else cmd_on "$(parse_lid "$@")"; fi
+        if is_running; then cmd_off; else cmd_on "$(parse_disable_sleep "$@")"; fi
         ;;
     *)
-        echo >&2 "usage: caffeine [on [--lid]|off|status|toggle]"
+        echo >&2 "usage: caffeine [on [--disable-sleep]|off|status|toggle]"
         exit 1
         ;;
 esac
