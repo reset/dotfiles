@@ -4,6 +4,8 @@ export ZSH_CUSTOM="$HOME/.oh-my-zsh/custom"
 export ZSH_THEME="powerlevel10k/powerlevel10k"
 export GOPATH=$HOME/go
 export GH_EDITOR="code --wait"
+# client-scheduler dashboard: render the per-host Fleets block with Nerd Font glyphs
+export OMG_SCHEDULER_NERD_FONT=1
 export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/local/sbin:$HOME/bin:$PATH
 
 fpath=(~/.zsh ~/.zsh/completions $fpath)
