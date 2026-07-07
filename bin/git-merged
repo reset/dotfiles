@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# git merged [branch] [target]
+#
+# Report whether <branch> (default: current) has been merged into <target>
+# (default: main). Detects both normal merges (fast-forward / merge commit)
+# and squash merges, which `git branch --merged` misses because the squashed
+# commit's SHA never lands on the target branch.
+#
+# Exit 0 if merged, 1 if not — so it composes in scripts and `&&` chains.
+
+target_default="main"
+
+branch="${1:-$(git rev-parse --abbrev-ref HEAD)}"
+target="${2:-$target_default}"
+
+if ! git rev-parse --verify --quiet "refs/heads/$branch" >/dev/null; then
+  echo >&2 "Error: no local branch '$branch'"
+  exit 2
+fi
+if ! git rev-parse --verify --quiet "$target" >/dev/null; then
+  echo >&2 "Error: no target ref '$target'"
+  exit 2
+fi
+
+if [[ "$branch" == "$target" ]]; then
+  echo >&2 "Error: branch and target are both '$branch'"
+  exit 2
+fi
+
+# Direct merge: branch tip is already an ancestor of target.
+if git merge-base --is-ancestor "$branch" "$target"; then
+  echo "✓ '$branch' is merged into '$target' (direct)"
+  exit 0
+fi
+
+# Squash merge: replay the branch's tree as a single commit onto the merge
+# base, then ask `git cherry` whether an equivalent patch already exists in
+# target. A leading '-' means the change landed (as a squash).
+base="$(git merge-base "$target" "$branch")"
+tree="$(git rev-parse "$branch^{tree}")"
+synthetic="$(git commit-tree "$tree" -p "$base" -m _)"
+
+if git cherry "$target" "$synthetic" | grep -q '^-'; then
+  echo "✓ '$branch' is merged into '$target' (squash)"
+  exit 0
+fi
+
+echo "✗ '$branch' is NOT merged into '$target'"
+exit 1
