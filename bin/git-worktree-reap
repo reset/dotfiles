@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Reap git worktrees that are safe to remove: not the main checkout, not locked,
+# clean (no uncommitted changes), and on a branch already merged into the base
+# branch. Prefers origin/<base> for the merged test — after a PR merge the local
+# base can lag, but the merged commit is always in the remote. The freed branch
+# is deleted afterward. Mutating by default; --dry-run previews without touching
+# anything (git worktree remove also refuses dirty/locked trees, so the guards
+# here are belt-and-suspenders, not the only safety).
+#
+# Usage: git-worktree-reap [base] [--dry-run]   (also runs as `git worktree-reap`)
+
+base="main"
+dry_run=0
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) dry_run=1 ;;
+        -*) echo >&2 "error: unknown flag '$arg'"; exit 1 ;;
+        *) base="$arg" ;;
+    esac
+done
+
+merge_ref="$base"
+if git rev-parse --verify --quiet "origin/$base" >/dev/null; then
+    merge_ref="origin/$base"
+fi
+
+main_worktree=""
+
+reap() {
+    local path="$1" branch="$2" locked="$3"
+    [[ -z "$path" || -z "$branch" ]] && return                    # bare or detached
+    [[ "$path" == "$main_worktree" ]] && return                   # never the main checkout
+    (( locked )) && return                                        # locked (e.g. build caches)
+    [[ -n "$(git -C "$path" status --porcelain)" ]] && return     # dirty — keep it
+    git merge-base --is-ancestor "$branch" "$merge_ref" 2>/dev/null || return  # not merged yet
+
+    if (( dry_run )); then
+        echo "would reap $path ($branch)"
+        return
+    fi
+
+    echo "reaping $path ($branch)"
+    git worktree remove "$path"
+    git branch -d "$branch" 2>/dev/null || echo >&2 "  kept branch $branch (not merged into current HEAD — pull $base and delete by hand)"
+}
+
+path=""
+branch=""
+locked=0
+while IFS= read -r line; do
+    case "$line" in
+        "worktree "*) path="${line#worktree }" ;;
+        "branch refs/heads/"*) branch="${line#branch refs/heads/}" ;;
+        "locked"*) locked=1 ;;
+        "")
+            [[ -z "$main_worktree" ]] && main_worktree="$path"
+            reap "$path" "$branch" "$locked"
+            path=""; branch=""; locked=0 ;;
+    esac
+done < <(git worktree list --porcelain; echo)

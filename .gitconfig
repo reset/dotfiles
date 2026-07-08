@@ -14,7 +14,7 @@
   ign = ls-files -o -i --exclude-standard
 
   # Delete local branches that have been merged into main
-	cl = "!f() { git switch main && git pull && git worktree prune && git branch --merged main | grep -vE '^[*+]| main$' | xargs -r git branch -d; }; f"
+	cl = "!f() { git switch main && git pull && git-worktree-reap && git worktree prune && git branch --merged main | grep -vE '^[*+]| main$' | xargs -r git branch -d; }; f"
 	dc = diff
 	dt = difftool
 	dc = diff
