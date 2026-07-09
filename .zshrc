@@ -63,3 +63,13 @@ esac
 # pnpm end
 #
 
+# wt — fuzzy-jump between git worktrees (see `git worktree list`). A function, not a
+# ~/bin script, because it has to cd the current shell.
+wt() {
+  local out
+  out=$(git worktree list 2>/dev/null) || { echo >&2 "wt: not inside a git repository"; return 1; }
+  local dir
+  dir=$(printf '%s\n' "$out" | fzf --height=40% --reverse --prompt='worktree> ' --with-nth=1,3) || return
+  [[ -n "$dir" ]] && cd "${dir%% *}"
+}
+
