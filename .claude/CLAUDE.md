@@ -140,28 +140,39 @@ Two home machines are reachable over the internet through Cloudflare tunnels on 
 - **media** — media server (`linux-build-1`, `192.168.1.28`) → `media.reset.dev` (tunnel `stormbreaker-server`; also serves `www`/`watch`/`reset.dev`).
 - **omg** — SWAPMEAT fleet/game host (`192.168.1.74`) → `omg.reset.dev` (tunnel `omg`; SSH ingress `ssh://localhost:22`, run as the `cloudflared-omg` systemd service).
 
-Add to `~/.ssh/config`:
+Add to `~/.ssh/config`. Each box uses **one alias that works everywhere**: the ProxyCommand
+probes the LAN IP first (fast path at home) and falls back to the Cloudflare tunnel off-LAN,
+so `ssh omg` / `ssh media` resolve correctly without picking a different name. HostName stays
+the LAN IP so the host key verifies under one name on both paths (same box, same key).
+
+The probe **must** use `nc -G` (connect timeout), not `-w` alone (idle timeout): when the
+network you're on is also `192.168.1.0/24`, the LAN IP is routable-but-dead and a bare `-w1`
+hangs ~75s on `connect()` — blowing ssh's ConnectTimeout before the cloudflared fallback ever
+runs. `-G1` bounds the connect probe to 1s so the fallback fires promptly. Don't drop it.
 
 ```
-# Media server — via tunnel
-Host media media.reset.dev reset.dev linux-build-1
-	HostName media.reset.dev
-	User reset
-	ProxyCommand cloudflared access ssh --hostname %h
-
-# Fleet/game host — LAN-direct at home
+# Fleet / game server — LAN-direct at home, Cloudflare tunnel off-LAN
 Host omg
 	HostName 192.168.1.74
 	User reset
+	ProxyCommand sh -c 'nc -G1 -w1 -z %h %p >/dev/null 2>&1 && exec nc %h %p || exec cloudflared access ssh --hostname omg.reset.dev'
 
-# Fleet/game host — via tunnel (off-LAN)
+# Same box — tunnel-only alias (forces the off-LAN path)
 Host omg.reset.dev
 	HostName omg.reset.dev
 	User reset
 	ProxyCommand cloudflared access ssh --hostname %h
+
+# Media server — LAN-direct at home, Cloudflare tunnel (stormbreaker-server) off-LAN
+Host media media.reset.dev reset.dev linux-build-1
+	HostName 192.168.1.28
+	User reset
+	ProxyCommand sh -c 'nc -G1 -w1 -z %h %p >/dev/null 2>&1 && exec nc %h %p || exec cloudflared access ssh --hostname media.reset.dev'
 ```
 
-Connect with `ssh media` / `ssh omg` (LAN) or `ssh omg.reset.dev` (off-LAN). On LAN, `reset@192.168.1.28` (media) and `reset@192.168.1.74` (omg) still work directly with no tunnel hop.
+Connect with `ssh omg` / `ssh media` from anywhere — the alias auto-picks LAN or tunnel.
+`ssh omg.reset.dev` forces the tunnel path. On LAN, `reset@192.168.1.74` (omg) and
+`reset@192.168.1.28` (media) still work directly with no tunnel hop.
 
 ## Claude Code Settings
 
