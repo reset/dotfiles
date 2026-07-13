@@ -139,7 +139,9 @@ Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed 
 
 **Sync local edits to the server**: run `~/.claude/skills/media-server/scripts/deploy`. It runs all local tests, tars the `.py` files (excluding `*_test.py`) over ssh to `reset.dev`, places them in `/opt/arr/` with `+x`, and runs `monitor.py` on the box as a post-deploy verification. Fails closed if any test fails.
 
-**Redeploy to a new server**: same `deploy` script works as long as `ssh reset.dev` resolves to the new host. The monitor cron at `/etc/cron.d/arr-monitor` is NOT managed by `deploy` — recreate that separately on a fresh box.
+**Redeploy to a new server**: same `deploy` script works as long as `ssh reset.dev` resolves to the new host. Two pieces of server-side state are NOT managed by `deploy` (or the compose file) and must be recreated separately on a fresh box:
+- The monitor cron at `/etc/cron.d/arr-monitor`.
+- The **Sonarr/Radarr → Jellyfin "Emby / Jellyfin" Connect notifications** — these live in each app's database, not in any tracked config, so a rebuilt Sonarr/Radarr loses them and silently reverts to Jellyfin's racy real-time-only scanning (see the "Batch season imports" lesson). Recreate both via `POST /api/v3/notification` (`implementation: MediaBrowser`, `updateLibrary: true`, host `192.168.1.28:8096`, Jellyfin API key). `monitor.py` asserts their presence so a missing one surfaces as a health issue.
 
 **Credentials**: the tracked copies of `fix-seeding.py` and `monitor.py` read the Transmission password from `$TRANSMISSION_PASS` (sanitized for the public-treat-as dotfiles repo). On the server, this needs to be set:
 - For the cron entry: `TRANSMISSION_PASS=...` in `/etc/cron.d/arr-monitor` (one line above the schedule)
@@ -276,6 +278,19 @@ The hardlink-and-keep-seeding architecture means every imported movie exists in 
 1. **MergeVersions API** (preferred, no filesystem mutation): `POST /Videos/MergeVersions?ids=ID1,ID2,...` collapses duplicates into one item with multiple selectable "versions". Run via Jellyfin admin API. Scene folders keep seeding; library count matches actual unique films.
 2. **`.ignore` files**: drop a `.ignore` file inside any folder Jellyfin should skip. Used for scene folders we don't want catalogued at all (e.g. `[scene-tag] Show Name`). Path: `/var/lib/transmission-daemon/downloads/{movies,tv-shows}/<folder>/.ignore`.
 
+### Batch season imports need the Sonarr→Jellyfin Connect trigger
+Jellyfin's real-time file monitor races on **batch imports** — when a whole season pack lands and Sonarr hardlinks 10 files over a couple of minutes, the monitor fires mid-write and builds a half-populated, inconsistent series node (some episodes loosely attached, most missing, `ParentId=<series>` episode query returns 0). Single-episode grabs finish before the monitor looks, so they're fine; this only bites season packs. Symptom: a season shows in Sonarr as fully imported (`episodeFileCount == episodeCount`) but is missing/partial in Jellyfin.
+
+Fix that's now in place: a Sonarr/Radarr → Jellyfin "Emby / Jellyfin" Connect notification (see the Jellyfin section) fires an authoritative library-update *after* the import completes, so the scan runs when files are settled. Sonarr uses **On Import Complete** (one scan per finished release — ideal for season packs); Radarr lacks that trigger so uses On Import/On Upgrade/On Rename.
+
+One-off repair for a season already stuck in the partial state — force a recursive refresh of just that series item (no full library scan needed):
+```bash
+JF_KEY=$(ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'")
+SID=<series item id from /Users/{admin}/Items?SearchTerm=...&IncludeItemTypes=Series>
+ssh reset@192.168.1.28 "curl -sf -X POST 'http://192.168.1.28:8096/Items/$SID/Refresh?Recursive=true&metadataRefreshMode=FullRefresh&imageRefreshMode=Default&replaceAllMetadata=false' -H \"X-Emby-Token: $JF_KEY\""
+```
+Renaming/refresh is hardlink-safe (imported files are `nlink=2`), so it never disturbs seeding.
+
 ### Transmission config path changed from systemd
 The native systemd Transmission stored state in `/var/lib/transmission-daemon/.config/transmission-daemon/`. The Docker container uses `/opt/arr/transmission/` — all 2204 resume files and torrent state were migrated there. The downloads directory (`/var/lib/transmission-daemon/downloads/`) is the same in both cases.
 
@@ -316,7 +331,11 @@ Current libraries (configured in Jellyfin admin):
 - Movies → `/media/movies` (container path) = `/var/lib/transmission-daemon/downloads/movies` (host)
 - TV Shows → `/media/tv-shows` = `/var/lib/transmission-daemon/downloads/tv-shows`
 
-Real-time monitoring is enabled on both libraries, so new files imported by Sonarr/Radarr appear in Jellyfin within seconds without an explicit refresh.
+New files appear in Jellyfin via two mechanisms: Jellyfin's own real-time file monitor (enabled on both libraries) **and** a Sonarr/Radarr → Jellyfin "Emby / Jellyfin" Connect notification that fires an authoritative library-update after each import completes. The Connect notification is the reliable path for batch imports (whole-season packs) — see the "Batch season imports need the Sonarr→Jellyfin Connect trigger" lesson below for why real-time monitoring alone isn't enough.
+
+Both connections use the Jellyfin API key + `updateLibrary: true`, host `192.168.1.28:8096`:
+- **Sonarr** (notification id 2): On Import, On Upgrade, **On Import Complete**, On Rename
+- **Radarr** (notification id 2): On Import, On Upgrade, On Rename (Radarr's MediaBrowser has no On Import Complete — movies are single-file)
 
 Hardware transcoding is enabled (VAAPI, `/dev/dri/renderD128`). The Haswell iGPU (i7-4770R / HD 5200) hardware-decodes H.264, MPEG-2, and VC1 only — anything HEVC/VP9/AV1 falls back to CPU.
 
@@ -422,7 +441,7 @@ Automated monitoring runs every 4 hours via `/etc/cron.d/arr-monitor`; logs to `
 
 ### Trigger Jellyfin library refresh
 
-Usually unnecessary — real-time monitoring picks up new files within seconds. But for a forced full re-scan:
+Usually unnecessary — the Sonarr/Radarr Connect notification triggers a scan on import, and real-time monitoring backs it up. For a season stuck in Jellyfin's partial-scan state, prefer the per-series recursive refresh in the "Batch season imports" lesson. For a forced full re-scan of everything:
 
 ```bash
 JF_KEY=$(ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'")

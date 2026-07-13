@@ -52,6 +52,39 @@ def arr_health(name, base_url, key, api_version="v3"):
     except Exception as e:
         issues.append(f"{name}: unreachable — {e}")
 
+def check_jellyfin_notification(name, base_url, key):
+    """Assert the Jellyfin (MediaBrowser) Connect notification exists and will
+    trigger a library update on import. This is load-bearing for library
+    freshness on batch season imports — without it, Jellyfin falls back to its
+    real-time file monitor, which races on multi-file imports and leaves
+    seasons half-scanned. The notification lives in the app's DB, not in any
+    tracked config, so it's easy to lose on a rebuild — hence this check."""
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/v3/notification",
+            headers={"X-Api-Key": key}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            notifications = json.loads(r.read())
+    except Exception as e:
+        issues.append(f"{name} Jellyfin notification: could not query — {e}")
+        return
+    mb = [n for n in notifications if n.get("implementation") == "MediaBrowser"]
+    if not mb:
+        issues.append(f"{name}: Jellyfin (MediaBrowser) Connect notification MISSING — library won't auto-update on import")
+        return
+    n = mb[0]
+    update_library = any(
+        f.get("name") == "updateLibrary" and f.get("value")
+        for f in n.get("fields", [])
+    )
+    if not n.get("onDownload"):
+        issues.append(f"{name}: Jellyfin notification present but 'On Import' (onDownload) is disabled")
+    elif not update_library:
+        issues.append(f"{name}: Jellyfin notification present but 'Update Library' is off")
+    else:
+        ok_msgs.append(f"{name}: Jellyfin Connect notification present (updates library on import)")
+
 # Check Sonarr
 sonarr_key = get_api_key("/opt/arr/sonarr/config.xml")
 if sonarr_key:
@@ -65,6 +98,12 @@ if radarr_key:
     arr_health("Radarr", "http://localhost:7878", radarr_key)
 else:
     issues.append("Radarr: could not read API key")
+
+# Jellyfin Connect notification presence (Sonarr + Radarr) — see docstring
+if sonarr_key:
+    check_jellyfin_notification("Sonarr", "http://localhost:8989", sonarr_key)
+if radarr_key:
+    check_jellyfin_notification("Radarr", "http://localhost:7878", radarr_key)
 
 # Check Prowlarr
 prowlarr_key = get_api_key("/opt/arr/prowlarr/config.xml")
