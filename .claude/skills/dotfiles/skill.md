@@ -47,7 +47,7 @@ Run `dot ls-files` to see the current tracked set. The structure as of this writ
 | `.config/alacritty/alacritty.toml` | Terminal emulator |
 | `.config/direnv/direnv.toml`, `.config/direnv/direnvrc` | direnv |
 | `.claude/CLAUDE.md`, `CLAUDE.md`, `README.md` | Personal Claude config, home-dir notes, bootstrap docs |
-| `.claude/skills/<name>/` | Personal Claude Code skills (currently `dotfiles`, `wp-migrate`) — tracked so they bootstrap on a fresh machine |
+| `.claude/skills/<name>/` | Personal Claude Code skills (`dotfiles`, `grab`, `media-server`, `seo-audit`, `static-site-engineer`, `wp-migrate`) — tracked so they bootstrap on a fresh machine |
 | `Library/Application Support/Code/User/settings.json` | VS Code settings |
 
 If a file is in `$HOME` but not in this list, it's not tracked. Adding it = `dot add` it (covered below).
