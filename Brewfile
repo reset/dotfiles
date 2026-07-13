@@ -90,6 +90,7 @@ if OS.mac?
 
   # Mac App Store
   mas "1Password for Safari", id: 1569813296
+  mas "Amazon Kindle", id: 302584613
   mas "Final Cut Pro", id: 424389933
   mas "Color Picker", id: 1545870783
   mas "Magnet", id: 441258766
