@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Copyright (C) 2026 One More Game - All Rights Reserved
+# Unauthorized copying of this file, via any medium is strictly prohibited
+# Proprietary and confidential
+set -euo pipefail
+
+# Thin wrapper putting the SteamAccountCli shim on PATH from anywhere.
+#
+# Two things have to be true or the underlying `dotnet run` breaks, and a bare
+# exec of the repo shim gives neither:
+#   1. .NET 10 on PATH — SteamAccountCli targets net10, but the ambient dotnet
+#      (e.g. rog's nix-pinned net8) can't build it. `direnv exec` loads the repo's
+#      own nix flake, which provides net10.
+#   2. cwd inside the repo — `dotnet` resolves global.json from cwd upward, so
+#      running from inside rog would pick up rog's net8 pin and fail. cd anchors
+#      resolution in SteamAccountCli (which pins nothing) so the net10 SDK wins.
+#
+# A symlink can't do this and would also misresolve the repo shim's own SCRIPT_DIR.
+# One-time on a new machine: `direnv allow ~/code/SteamAccountCli`.
+readonly REPO="$HOME/code/SteamAccountCli"
+cd "$REPO"
+exec direnv exec "$REPO" "$REPO/bin/steam-account" "$@"
