@@ -22,6 +22,7 @@ Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-
 | Jellyfin | linuxserver/jellyfin | 8096 | `/opt/arr/jellyfin/` | `http://jellyfin.home` |
 | Jellystat | cyfershepard/jellystat | 3000 | `/opt/arr/jellystat/` | `http://jellystat.home` |
 | Seerr | ghcr.io/seerr-team/seerr | 5055 | `/opt/arr/overseerr/` | `http://seerr.home` |
+| Threadfin | fyb3roptik/threadfin | 34400 | `/opt/arr/threadfin/` | `http://threadfin.home` |
 | Pi-hole | pihole/pihole | 53 (DNS), 8080 (web) | `/opt/arr/pihole/` | `http://pihole.home` |
 | Caddy | caddy | 80 | `/opt/arr/caddy/Caddyfile` | — |
 | Cloudflared | cloudflare/cloudflared | — | — (token-managed) | — |
@@ -338,6 +339,132 @@ Both connections use the Jellyfin API key + `updateLibrary: true`, host `192.168
 - **Radarr** (notification id 2): On Import, On Upgrade, On Rename (Radarr's MediaBrowser has no On Import Complete — movies are single-file)
 
 Hardware transcoding is enabled (VAAPI, `/dev/dri/renderD128`). The Haswell iGPU (i7-4770R / HD 5200) hardware-decodes H.264, MPEG-2, and VC1 only — anything HEVC/VP9/AV1 falls back to CPU.
+
+## Live TV (Threadfin → Jellyfin)
+
+Threadfin (the maintained fork of xTeVe) adds **live TV** to the stack. It emulates an HDHomeRun network tuner: it ingests an M3U playlist, lets you curate/filter which channels are active, and exposes an HDHomeRun `discover.json`/`lineup.json` + an XMLTV guide that **Jellyfin's native Live TV** consumes. Pipeline: `M3U source → Threadfin (curate) → HDHomeRun tuner in Jellyfin → watch.reset.dev`. Admin UI: `http://192.168.1.28:34400/web/` (or `http://threadfin.home`).
+
+### The legal reality (read before promising a channel)
+Free, legal M3U sources (**iptv-org** — `https://iptv-org.github.io/iptv/countries/us.m3u`, ~1563 US channels; category lists like `.../categories/sports.m3u`) carry publicly-available streams only. They do **not** carry licensed broadcast networks — no **Fox / FS1 / ESPN / Telemundo**. So live Fox (e.g. World Cup) is *not* obtainable through this pipeline: Fox-live-and-legal means a browser (Fubo/YouTube TV/Hulu Live/Sling — all DRM, none integrate into Jellyfin) or an OTA antenna + HDHomeRun. Threadfin proves and provides the *self-hosted live-TV capability*; it does not defeat DRM.
+
+> **mjh.nz is EPG-only now.** `i.mjh.nz/PlutoTV/...` used to serve matched M3U + EPG pairs; they dropped M3U hosting — only `.xml` (EPG) files remain. Don't hand out `i.mjh.nz/*.m3u8` URLs, they 404. Use iptv-org for the tuner M3U.
+
+### Compose service
+```yaml
+  threadfin:
+    image: fyb3roptik/threadfin:latest
+    container_name: threadfin
+    network_mode: host
+    environment:
+      - PUID=111
+      - PGID=113
+      - TZ=America/Los_Angeles
+      - THREADFIN_BIND_IP_ADDRESS=0.0.0.0
+    volumes:
+      - /opt/arr/threadfin:/home/threadfin/conf
+    restart: unless-stopped
+```
+
+### Bind-IP gotcha (this will bite you)
+On first boot Threadfin auto-picks an interface IP and **persists it in `settings.json` (`bindIpAddress`)** — it ignores the `THREADFIN_BIND_IP_ADDRESS` env var after that first write. On this box it grabbed the **Tailscale** IP (`100.x`), so nothing on loopback/LAN could reach it. Fix: set the field to the stable LAN IP and restart:
+```bash
+ssh reset@192.168.1.28 'sudo python3 -c "
+import json; p=\"/opt/arr/threadfin/settings.json\"
+d=json.load(open(p)); d[\"bindIpAddress\"]=\"192.168.1.28\"; json.dump(d,open(p,\"w\"),indent=2)"
+cd /opt/arr && docker compose restart threadfin'
+```
+Pin it to `192.168.1.28` (not `0.0.0.0`) so the HDHomeRun `discover.json` **advertises a reachable BaseURL** — Jellyfin follows that URL for the lineup. Consequence: loopback won't work, so **Caddy must proxy the LAN IP, not `localhost`**.
+
+### Caddy route
+```
+http://threadfin.home {
+    reverse_proxy 192.168.1.28:34400 {
+        header_up Host {upstream_hostport}
+    }
+}
+```
+The `header_up Host` line is required — Threadfin 502s on a forwarded `Host: threadfin.home` (same quirk the Transmission block handles). After editing, a plain `caddy reload` sometimes keeps a stale upstream (observed dialing `[::1]:34400` after the file already said `192.168.1.28`) — if a route 502s post-reload, `docker compose restart caddy` to force a clean load.
+
+**DNS:** `threadfin.home` → `192.168.1.28` is added. **The Pi-hole web-API password is NOT in the shared 1Password vaults** (it lives in Jamie's personal/Private vault, invisible to the Claude 1Password service account; the compose `FTLCONF_webserver_api_password: "changeme"` is a stale placeholder). So the API PATCH flow above is blocked without asking Jamie. **Workaround that needs no password** — edit `pihole.toml` directly (you have SSH + sudo): add the record to the `dns.hosts` array in `/opt/arr/pihole/etc-pihole/pihole.toml`, then `docker compose restart pihole` (FTL re-reads the TOML on boot). Verify with `dig +short <name>.home @192.168.1.28`. This is the reliable path for any `.home` record when the web password isn't handy.
+
+### Configuring the source (Threadfin web UI — no clean API)
+Threadfin's backend is an undocumented WebSocket; don't try to script it. Setup is UI-driven:
+1. **Playlist** tab → **New** → paste the M3U URL (e.g. iptv-org US). Threadfin downloads + parses (~1563 streams). Registered under `settings.json → files.m3u`.
+2. **Filter** tab → **New** → **Type: `M3U: Group Title`** → **Next**. **Gotcha:** the **Group Title dropdown** is the field that actually matches — *not* the "Filter Name"/"Filter Category" text fields (those are cosmetic labels). Pick the group from the dropdown, e.g. `Sports (79)`, `News (99)`. Save.
+3. **Mapping** tab shows **only active (filtered) channels** — it's empty until a filter activates some. Threadfin caps active channels at **480**; with >480 and no filter, zero are active (that's why a fresh Mapping tab looks blank even though the M3U imported fine). Optional rename/renumber here; skip for a quick setup.
+
+Endpoints Jellyfin cares about: `discover.json`, `lineup.json` (populates only after a filter is saved), and the guide at **`http://192.168.1.28:34400/threadfin.xml`** (note: *not* `/xmltv/threadfin.xml` — that 404s). With no real XMLTV source added in Threadfin, `threadfin.xml` is a placeholder/dummy guide — enough for channels to appear and tune; real EPG is a follow-up.
+
+### Wiring Jellyfin (API — idempotent-ish, safe to re-run refresh)
+```bash
+JF_KEY=$(ssh reset@192.168.1.28 "sudo python3 -c 'import json; print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])'")
+
+# 1. Add HDHomeRun tuner pointing at Threadfin
+ssh reset@192.168.1.28 "curl -s -X POST 'http://192.168.1.28:8096/LiveTv/TunerHosts' \
+  -H 'X-Emby-Token: $JF_KEY' -H 'Content-Type: application/json' \
+  -d '{\"Type\":\"hdhomerun\",\"Url\":\"http://192.168.1.28:34400\",\"AllowHWTranscoding\":true}'"
+
+# 2. Add XMLTV guide provider (EnableAllTuners applies it to the tuner above)
+ssh reset@192.168.1.28 "curl -s -X POST 'http://192.168.1.28:8096/LiveTv/ListingProviders?validateListings=false' \
+  -H 'X-Emby-Token: $JF_KEY' -H 'Content-Type: application/json' \
+  -d '{\"Type\":\"xmltv\",\"Path\":\"http://192.168.1.28:34400/threadfin.xml\",\"EnableAllTuners\":true}'"
+
+# 3. Refresh the guide (run this any time the Threadfin filter changes)
+ssh reset@192.168.1.28 "JF_KEY=$JF_KEY; TASKID=\$(curl -s 'http://192.168.1.28:8096/ScheduledTasks' -H \"X-Emby-Token: \$JF_KEY\" | python3 -c 'import sys,json; print([t[\"Id\"] for t in json.load(sys.stdin) if t.get(\"Key\")==\"RefreshGuide\"][0])'); curl -s -X POST \"http://192.168.1.28:8096/ScheduledTasks/Running/\$TASKID\" -H \"X-Emby-Token: \$JF_KEY\""
+
+# Verify channels landed
+ssh reset@192.168.1.28 "curl -s 'http://192.168.1.28:8096/LiveTv/Channels?api_key=$JF_KEY' | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d[\"TotalRecordCount\"], \"channels\")'"
+```
+**When the Threadfin filter changes, re-run step 3** (guide refresh) — Jellyfin caches the lineup and won't pick up added/removed channels until the guide rebuilds. Jellyfin's **Refresh Guide** scheduled task also runs on its own `IntervalTrigger` — set to **6h** (was Jellyfin's 24h default), so provider/Threadfin channel changes self-propagate within 6 hours without any manual step. To change the interval, POST the full trigger array to `/ScheduledTasks/{RefreshGuide-id}/Triggers` with `IntervalTicks` in 100ns units (6h = `216000000000`).
+
+For an on-demand rebuild there's a tracked shim **`~/bin/tv-sync`** (in dotfiles) — it looks up the API key + task id on the server and fires `RefreshGuide`. Run `tv-sync` after adding channels in Threadfin instead of pasting the step-3 one-liner; allow ~60–90s, then reload the Live TV view.
+
+### Buffer MUST be `ffmpeg` or Jellyfin playback fails
+Threadfin's default buffer is `-` (direct passthrough) — it hands the raw HLS URL to the client and steps out ("Threadfin is no longer involved" in the log). Jellyfin's **browser player then throws "Playback failed due to a fatal player error"** on those HLS URLs. Fix: set the buffer to `ffmpeg` so Threadfin pulls the stream server-side, remuxes to MPEG-TS, and serves that — which Jellyfin transcodes cleanly. The container already ships `ffmpeg` at `/usr/bin/ffmpeg`. Set it both globally and per-playlist:
+```bash
+ssh reset@192.168.1.28 'sudo python3 -c "
+import json; p=\"/opt/arr/threadfin/settings.json\"; d=json.load(open(p))
+d[\"buffer\"]=\"ffmpeg\"
+for pid in d.get(\"files\",{}).get(\"m3u\",{}): d[\"files\"][\"m3u\"][pid][\"buffer\"]=\"ffmpeg\"
+json.dump(d,open(p,\"w\"),indent=2)"
+cd /opt/arr && docker compose restart threadfin'
+```
+(Or in the UI: **Settings → Buffer → `ffmpeg`**, plus each Playlist's own buffer dropdown.) Cost: ffmpeg runs on the box (Haswell i7-4770R) — one or two concurrent streams are fine, it's not a transcode farm.
+
+### Audio-but-no-video: Threadfin's ffmpeg probe is too small for 1080p60 sources
+Symptom: a channel plays **audio but shows a single frozen frame** (often the channel-ident bumper) in Jellyfin's browser player. This is NOT a codec the browser can't play, and NOT a dead source — it's Threadfin's `ffmpeg.options` in `settings.json`.
+
+The default template ships with `-analyzeduration 1000000 -probesize 1000000` (1s / 1MB). High-bitrate **1080p60 High-profile** streams (e.g. the mybunny/`tv123.me` line — the free iptv-org channels were simpler and never triggered this) only carry their video parameter sets (SPS/PPS) at keyframes. A 1MB probe is too small to capture them before `-c:v copy` begins, so the remuxed MPEG-TS **never contains the decode headers**. Downstream, ffprobe/Jellyfin/the browser report the video as `unspecified size` / "Could not find codec parameters" and decode zero frames — while the separate AAC audio track plays fine.
+
+Diagnose (raw upstream decodes clean, Threadfin's output doesn't):
+```bash
+# upstream URL for a channel: grep its tvg-name in the M3U, take the following https line
+UP="https://soursignal.com/.../..."          # from the M3U
+# raw upstream — should report 1920x1080 and count hundreds of frames:
+ssh reset@192.168.1.28 "docker exec threadfin timeout 40 ffmpeg -hide_banner -y -t 20 -i '$UP' -an -f null - 2>&1 | grep -Ei 'Video:|frame='"
+# Threadfin's live output (stream id from lineup.json) — broken shows 'unspecified size', ~0 frames:
+ssh reset@192.168.1.28 "docker exec threadfin timeout 40 ffmpeg -hide_banner -y -t 12 -i 'http://192.168.1.28:34400/stream/<id>' -an -f null - 2>&1 | grep -Ei 'Video:|unspecified|frame='"
+```
+
+Fix (global, repairs every channel) — bump the probe to 10MB, add `-bsf:v dump_extra=freq=keyframe` to re-insert SPS/PPS at every keyframe, and drop the two junk flags the default carried (`-movflags +faststart` is MP4-only and meaningless for mpegts; `-copyts` preserves the source's huge live timestamps and hurts player startup):
+```bash
+ssh reset@192.168.1.28 'sudo python3 - <<"PY"
+import json,shutil
+p="/opt/arr/threadfin/settings.json"; shutil.copy2(p,p+".bak-ffmpegfix")
+d=json.load(open(p))
+d["ffmpeg.options"]=("-hide_banner -loglevel error -analyzeduration 10000000 -probesize 10000000 "
+ "-i [URL] -map 0:v -map 0:a:0 -c:v copy -bsf:v dump_extra=freq=keyframe "
+ "-c:a aac -b:a 192k -ac 2 -f mpegts -fflags +genpts pipe:1")
+json.dump(d,open(p,"w"),indent=2)
+PY
+cd /opt/arr && docker compose restart threadfin'
+```
+Then re-run the Threadfin-output decode check above — it should now report hundreds of frames. Reopen the channel in Jellyfin (stop/restart playback; the browser caches the broken session). No guide refresh needed — this is stream content, not the lineup. The embedded Closed Captions ride along with `-c:v copy` automatically; dropping `-c:s copy` is safe because `-map 0:v` never muxed a separate subtitle stream anyway.
+
+### Verifying a stream headlessly
+- With `buffer = ffmpeg`, the stream endpoint serves real MPEG-TS, so `curl` **is** a valid test: pull `http://192.168.1.28:34400/stream/<id>` (from `lineup.json`) and confirm bytes flow and the first byte is `0x47` (TS sync). ~12 MB in ~12s = healthy.
+- With `buffer = -` (passthrough), `curl` only grabs the `.m3u8` manifest, not video — inconclusive; test by clicking a channel in Jellyfin instead.
+- To pre-screen which channels are alive, probe the **upstream** URLs in `urls.json` for a valid HLS manifest (starts with `#EXTM3U`). Expect a chunk of free iptv-org channels to be dead or `[Geo-blocked]` — that's the source, not the pipeline. On the sports list, ~24/30 were live; reliable ones included Tennis Channel, Stadium, PGA Tour, FIFA+ United States.
 
 ## Jellystat (Jellyfin analytics — Tautulli replacement)
 
