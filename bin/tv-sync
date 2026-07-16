@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# tv-sync — force the Jellyfin Live TV guide/lineup to rebuild from Threadfin.
+# Use after adding channels in Threadfin when you don't want to wait for the
+# 6h scheduled refresh. Runs entirely on the media server; no hardcoded keys.
+
+readonly HOST="reset@192.168.1.28"
+readonly JF="http://192.168.1.28:8096"
+
+ssh "$HOST" '
+  set -euo pipefail
+  key="$(sudo python3 -c "import json;print(json.load(open(\"/opt/arr/overseerr/settings.json\"))[\"jellyfin\"][\"apiKey\"])")"
+  task="$(curl -sS "'"$JF"'/ScheduledTasks" -H "X-Emby-Token: $key" \
+    | python3 -c "import sys,json;print([t[\"Id\"] for t in json.load(sys.stdin) if t.get(\"Key\")==\"RefreshGuide\"][0])")"
+  curl -sS -X POST "'"$JF"'/ScheduledTasks/Running/$task" -H "X-Emby-Token: $key"
+'
+
+echo "Jellyfin guide refresh triggered — allow ~60-90s, then reload the Live TV view."
