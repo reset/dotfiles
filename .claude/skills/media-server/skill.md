@@ -461,6 +461,26 @@ cd /opt/arr && docker compose restart threadfin'
 ```
 Then re-run the Threadfin-output decode check above — it should now report hundreds of frames. Reopen the channel in Jellyfin (stop/restart playback; the browser caches the broken session). No guide refresh needed — this is stream content, not the lineup. The embedded Closed Captions ride along with `-c:v copy` automatically; dropping `-c:s copy` is safe because `-map 0:v` never muxed a separate subtitle stream anyway.
 
+### Choppy playback: low/variable upstream bitrate, not our pipeline
+Symptom: a channel plays with **stuttery/choppy motion** (animation like Cartoon Network shows it worst — flat colors + fast pans expose dropped frames). First rule out our side, which is almost never the cause: Jellyfin Live TV runs `-codec:v copy -codec:a copy` (pure remux, **no re-encode** — confirm via `ps aux | grep jellyfin.*ffmpeg`), the box sits near-idle, and the Mac browser hardware-decodes h264. We pass the provider's bytes through verbatim; we can't add frames that never arrived.
+
+The real cause on the mybunny/`tv123.me` line: its 1080p**60** channels are delivered at a **low, variable bitrate — ~2–5 Mbit/s (dipping to ~1.5)** where smooth 1080p60 wants 8–12. A real-time decode lands ~43 effective fps vs the nominal 59.94. Measure it (do this sparingly — see the connection-limit caveat):
+```bash
+# real-time decode: fps well under 59.94 and speed dropping below 1.0x = under-fed source
+ssh reset@192.168.1.28 "docker exec threadfin timeout 50 ffmpeg -hide_banner -re -t 30 -i '<upstream-or-threadfin-url>' -an -f null - 2>&1 | grep -Ei 'frame=|concealing|corrupt' | tail -4"
+# actual bitrate: capture 20s of stream-time, size/20/1024*8 = kbit/s
+ssh reset@192.168.1.28 "docker exec threadfin sh -c \"timeout 25 ffmpeg -hide_banner -y -t 20 -i '<url>' -c copy -f mpegts /tmp/x.ts 2>/dev/null; stat -c%s /tmp/x.ts\""
+```
+
+Partial fix (rides out delivery *dips*, cannot recreate genuinely-dropped frames): bump Threadfin's RAM prebuffer `buffer.size.kb`. **Keep it ≤ ~2 MB** — 2048 measurably smoothed Cartoon Network; 8192 caused a ~20 s channel-start delay (Threadfin prebuffers the whole buffer at the stream's low bitrate before serving byte one) and timed players out. Default is 1024.
+```bash
+ssh reset@192.168.1.28 'sudo python3 -c "
+import json,shutil; p=\"/opt/arr/threadfin/settings.json\"; shutil.copy2(p,p+\".bak-buffer\")
+d=json.load(open(p)); d[\"buffer.size.kb\"]=2048; json.dump(d,open(p,\"w\"),indent=2)"
+cd /opt/arr && docker compose restart threadfin'
+```
+**Connection-limit caveat (important):** these IPTV accounts cap concurrent streams (~1–2). Opening probe after probe while someone is watching trips the cap — which starves your probes *and* can degrade the live view, making measurements pessimistically bad. Diagnose with one or two pulls, then stop and let a human judge in the actual Jellyfin app. If a channel is choppy after the buffer bump and other channels are fine, it's that specific feed — ask the provider for a better/alternate one; there's no local fix for an under-fed source.
+
 ### Verifying a stream headlessly
 - With `buffer = ffmpeg`, the stream endpoint serves real MPEG-TS, so `curl` **is** a valid test: pull `http://192.168.1.28:34400/stream/<id>` (from `lineup.json`) and confirm bytes flow and the first byte is `0x47` (TS sync). ~12 MB in ~12s = healthy.
 - With `buffer = -` (passthrough), `curl` only grabs the `.m3u8` manifest, not video — inconclusive; test by clicking a channel in Jellyfin instead.
