@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+#
+# sync-completions — mirror a repo's zsh completion files into the personal
+# fpath dir (~/.zsh/completions) and prune links whose source was removed.
+# Fixes compinit drift when a tool is added, renamed, or removed in the repo.
+#
+# Usage: sync-completions [source-dir]
+#   source-dir defaults to ~/code/rog/bin/completions
+#
+# Idempotent: re-linking an already-correct link is a no-op, and the compinit
+# cache is only cleared when something actually changed — safe to run from a
+# git hook or after every `git pull`.
+#
+
+readonly SRC_DIR="${1:-$HOME/code/rog/bin/completions}"
+readonly DEST_DIR="$HOME/.zsh/completions"
+
+if [[ ! -d "$SRC_DIR" ]]; then
+    echo >&2 "error: source dir not found: $SRC_DIR"
+    exit 1
+fi
+
+mkdir -p "$DEST_DIR"
+
+linked=0
+pruned=0
+
+# Link every _<tool> completion file from the repo into the dest dir.
+for src in "$SRC_DIR"/_*; do
+    [[ -e "$src" ]] || continue
+    dest="$DEST_DIR/$(basename "$src")"
+
+    # Never clobber a real file managed elsewhere (e.g. _omg, written by
+    # `omg completions install`). We only manage symlinks.
+    if [[ -e "$dest" && ! -L "$dest" ]]; then
+        continue
+    fi
+
+    # Already pointing at the right place — nothing to do.
+    if [[ -L "$dest" && "$(readlink "$dest")" == "$src" ]]; then
+        continue
+    fi
+
+    ln -sfn "$src" "$dest"
+    linked=$((linked + 1))
+done
+
+# Prune symlinks that point into this source dir but whose target no longer
+# exists (tool removed or renamed). Scoped to SRC_DIR so links from other
+# sources are left alone.
+for link in "$DEST_DIR"/_*; do
+    [[ -L "$link" ]] || continue
+    target="$(readlink "$link")"
+    case "$target" in
+        "$SRC_DIR"/*)
+            if [[ ! -e "$target" ]]; then
+                rm "$link"
+                pruned=$((pruned + 1))
+            fi
+            ;;
+    esac
+done
+
+# Print the summary on a manual run (stdout is a TTY) always, but stay silent
+# on a no-op when driven from a git hook so pulls don't get spammed.
+if (( linked + pruned > 0 )) || [[ -t 1 ]]; then
+    echo "synced: $linked linked, $pruned pruned  ($SRC_DIR -> $DEST_DIR)"
+fi
+
+# Clear the compinit cache only when the link set changed, so the next shell
+# rebuilds cleanly without paying the cost on no-op runs.
+if (( linked + pruned > 0 )); then
+    rm -f "$HOME"/.zcompdump*
+    echo "cleared zcompdump cache — start a new shell to pick up the changes"
+fi
