@@ -18,6 +18,7 @@ Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-
 | Sonarr | linuxserver/sonarr | 8989 | `/opt/arr/sonarr/` | `http://sonarr.home` |
 | Radarr | linuxserver/radarr | 7878 | `/opt/arr/radarr/` | `http://radarr.home` |
 | Prowlarr | linuxserver/prowlarr | 9696 | `/opt/arr/prowlarr/` | `http://prowlarr.home` |
+| Bazarr | linuxserver/bazarr | 6767 | `/opt/arr/bazarr/` | `http://bazarr.home` |
 | Transmission | linuxserver/transmission | 9091 | `/opt/arr/transmission/` | `http://transmission.home` |
 | Jellyfin | linuxserver/jellyfin | 8096 | `/opt/arr/jellyfin/` | `http://jellyfin.home` |
 | Jellystat | cyfershepard/jellystat | 3000 | `/opt/arr/jellystat/` | `http://jellystat.home` |
@@ -27,6 +28,8 @@ Everything runs in Docker, managed by a single compose file at `/opt/arr/docker-
 | Caddy | caddy | 80 | `/opt/arr/caddy/Caddyfile` | — |
 | Cloudflared | cloudflare/cloudflared | — | — (token-managed) | — |
 | unpackerr | golift/unpackerr | — | `/opt/arr/unpackerr/` | — |
+
+**Image versions are pinned, not `:latest`.** Every service in the compose file is pinned to an exact version tag (e.g. `lscr.io/linuxserver/sonarr:4.0.17.2952-ls312`, `postgres:16`), and the two images that don't publish a clean version tag (jellystat, threadfin) are pinned by digest (`@sha256:...`). This is deliberate: a `docker compose pull` can no longer silently pull a breaking major and take the stack down on the next restart. **Consequence:** Sonarr/Radarr will show a benign "New update is available" health warning — that's expected, the container image is pinned so the app updates on your schedule, not on restart. To update a service, bump its tag in the compose file, `docker compose pull <svc>`, then `docker compose up -d <svc>`. See "Updating a pinned image" below.
 
 **Remote access via Cloudflare tunnel**: `watch.reset.dev` → Jellyfin (port 8096), `ssh.reset.dev` → sshd (port 22). Both ride the same `cloudflared` container; routes are managed in the Cloudflare Zero Trust dashboard (tunnel name `stormbreaker-server`), not in a local config file.
 
@@ -51,6 +54,26 @@ ssh reset@192.168.1.28 "docker logs sonarr --tail 50"
 
 # Reload Caddy config without restart
 ssh reset@192.168.1.28 "docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
+```
+
+### Updating a pinned image
+
+Images are version-pinned (see stack overview). To update one deliberately:
+```bash
+# 1. Find the current running version to know what you're moving from
+ssh reset@192.168.1.28 'docker inspect sonarr --format "{{index .Config.Labels \"org.opencontainers.image.version\"}}"'
+# 2. Edit the tag in /opt/arr/docker-compose.yml, then validate + pull (does NOT touch the running container)
+ssh reset@192.168.1.28 'cd /opt/arr && docker compose config --quiet && docker compose pull sonarr'
+# 3. Apply
+ssh reset@192.168.1.28 'cd /opt/arr && docker compose up -d sonarr'
+```
+`docker compose pull` is the safety net — it fails loudly if the tag doesn't resolve, before any running container is disturbed. Backups of the compose file live alongside it as `docker-compose.yml.bak-<timestamp>`.
+
+### Full-stack recreate → restart cloudflared afterward
+
+If you ever recreate everything at once (`docker compose up -d` after editing many services, or a full `docker compose down && up`), **cloudflared can start before Jellyfin is listening**, pin a dead `[::1]:8096` origin connection, and serve **HTTP 502 on `watch.reset.dev`** even after Jellyfin is up (Jellyfin binds IPv4 only; cloudflared resolves `localhost` → `::1` and caches the failure). Local `curl http://localhost:8096` returns 200 while the tunnel 502s — that split is the tell. Fix is a lone restart once Jellyfin is up:
+```bash
+ssh reset@192.168.1.28 "cd /opt/arr && docker compose restart cloudflared"
 ```
 
 ## Key paths
@@ -136,13 +159,15 @@ Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed 
 | `/opt/arr/disk-audit.py` | Honest disk accounting (hardlink-aware) + `--seed-status` per-torrent verdict | Manual |
 | `/opt/arr/bulk-add.py` | Parse scene-named folders and bulk-add to Radarr/Sonarr | Manual |
 | `/opt/arr/fix-seeding.py` | Restore hardlinks for files Sonarr/Radarr moved instead of hardlinked | Manual when seeding shows error |
-| `/opt/arr/monitor.py` | *arr health check, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
+| `/opt/arr/monitor.py` | Health check for Sonarr/Radarr/Prowlarr + Bazarr + Transmission, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
 
 **Sync local edits to the server**: run `~/.claude/skills/media-server/scripts/deploy`. It runs all local tests, tars the `.py` files (excluding `*_test.py`) over ssh to `reset.dev`, places them in `/opt/arr/` with `+x`, and runs `monitor.py` on the box as a post-deploy verification. Fails closed if any test fails.
 
 **Redeploy to a new server**: same `deploy` script works as long as `ssh reset.dev` resolves to the new host. Two pieces of server-side state are NOT managed by `deploy` (or the compose file) and must be recreated separately on a fresh box:
 - The monitor cron at `/etc/cron.d/arr-monitor`.
 - The **Sonarr/Radarr → Jellyfin "Emby / Jellyfin" Connect notifications** — these live in each app's database, not in any tracked config, so a rebuilt Sonarr/Radarr loses them and silently reverts to Jellyfin's racy real-time-only scanning (see the "Batch season imports" lesson). Recreate both via `POST /api/v3/notification` (`implementation: MediaBrowser`, `updateLibrary: true`, host `192.168.1.28:8096`, Jellyfin API key). `monitor.py` asserts their presence so a missing one surfaces as a health issue.
+
+`monitor.py` also checks **Bazarr** — liveness via `/api/system/status` plus a wiring assertion (`use_sonarr`/`use_radarr` on, and Sonarr/Radarr IPs not left at `127.0.0.1`), since a rebuilt `/opt/arr/bazarr` silently un-wires the bridge-networked container. And because images are pinned, it **demotes the benign "New update is available" *arr warning to info** (via `arrlib.is_update_notice`) so the cron doesn't report ISSUES every tick — real warnings/errors still alert. The pure helpers (`parse_bazarr_config`, `is_update_notice`) live in `arrlib.py` with tests in `arrlib_test.py`; `monitor.py` itself runs its checks at import time so it isn't unit-tested directly.
 
 **Credentials**: the tracked copies of `fix-seeding.py` and `monitor.py` read the Transmission password from `$TRANSMISSION_PASS` (sanitized for the public-treat-as dotfiles repo). On the server, this needs to be set:
 - For the cron entry: `TRANSMISSION_PASS=...` in `/etc/cron.d/arr-monitor` (one line above the schedule)
@@ -385,7 +410,7 @@ http://threadfin.home {
 ```
 The `header_up Host` line is required — Threadfin 502s on a forwarded `Host: threadfin.home` (same quirk the Transmission block handles). After editing, a plain `caddy reload` sometimes keeps a stale upstream (observed dialing `[::1]:34400` after the file already said `192.168.1.28`) — if a route 502s post-reload, `docker compose restart caddy` to force a clean load.
 
-**DNS:** `threadfin.home` → `192.168.1.28` is added. **The Pi-hole web-API password is NOT in the shared 1Password vaults** (it lives in Jamie's personal/Private vault, invisible to the Claude 1Password service account; the compose `FTLCONF_webserver_api_password: "changeme"` is a stale placeholder). So the API PATCH flow above is blocked without asking Jamie. **Workaround that needs no password** — edit `pihole.toml` directly (you have SSH + sudo): add the record to the `dns.hosts` array in `/opt/arr/pihole/etc-pihole/pihole.toml`, then `docker compose restart pihole` (FTL re-reads the TOML on boot). Verify with `dig +short <name>.home @192.168.1.28`. This is the reliable path for any `.home` record when the web password isn't handy.
+**DNS:** `threadfin.home` → `192.168.1.28` is added. **The Pi-hole web-API password is now `changeme`** — the compose `FTLCONF_webserver_api_password: "changeme"` env var forces the password on container start, and the July 2026 stack recreate applied it. So the API PATCH flow above **works** with `{"password":"changeme"}` (verified adding `bazarr.home`), and it's the preferred path — it needs **no Pi-hole restart, so no DNS blip for the house**. (`changeme` is a weak password on the DNS admin; LAN-only — port 8080 isn't tunneled — so low risk, but worth setting a real one someday.) **Fallback that needs no web password at all** — edit `pihole.toml` directly (SSH + sudo): add the record to the `dns.hosts` array in `/opt/arr/pihole/etc-pihole/pihole.toml`, then `docker compose restart pihole` (FTL re-reads the TOML on boot, but this *does* blip DNS). Verify either path with `dig +short <name>.home @192.168.1.28`.
 
 ### Configuring the source (Threadfin web UI — no clean API)
 Threadfin's backend is an undocumented WebSocket; don't try to script it. Setup is UI-driven:
@@ -493,6 +518,54 @@ cd /opt/arr && docker compose restart threadfin'
 ## Seerr (request frontend)
 
 `http://seerr.home` / `http://localhost:5055`. Wired to Jellyfin via `mediaServerType=2` in `settings.json`. Plex login was removed (`newPlexLogin: false`). Use Seerr admin → Jobs → "Jellyfin Full Library Sync" to refresh availability state after a big import batch.
+
+### "I have to approve a request twice" — Seerr's servarr API timeout
+Symptom: approving a request in Seerr appears to do nothing (stays unfulfilled / shows failed), and re-approving the same request works. It's **not** a two-step-by-design behavior — the first approval is silently *failing*. Seerr logs show:
+```
+[Sonarr API]: Error retrieving series by tvdb ID {"errorMessage":"timeout of 10000ms exceeded"}
+[Media Request]: ...marking status as FAILED
+```
+Cause: before adding a title, Seerr calls Sonarr/Radarr to look up its full metadata. For a title the *arr hasn't cached yet, that lookup goes out to `skyhook.sonarr.tv` (Sonarr's TheTVDB proxy) and occasionally takes >10s. Seerr's `network.apiRequestTimeout` (in `settings.json`) governs **all** servarr API calls and defaults to `10000` ms — so a slow cold lookup gets killed and the request marked FAILED. The re-approval works because the *arr now has the metadata cached (warm lookups are ~60ms).
+
+Fix — raise the timeout (30s is the community-standard value for this). This fork reads it live from `getSettings().network.apiRequestTimeout` in `dist/api/servarr/base.js`:
+```bash
+ssh reset@192.168.1.28 'sudo python3 - <<"PY"
+import json, shutil
+p="/opt/arr/overseerr/settings.json"; shutil.copy2(p, p+".bak-apitimeout")
+d=json.load(open(p)); d["network"]["apiRequestTimeout"]=30000
+json.dump(d, open(p,"w"), indent=2)
+PY
+cd /opt/arr && docker compose restart seerr'
+```
+Cost: the approval action in the UI can now block up to 30s on a genuinely dead upstream before erroring — rare, and a better trade than false FAILEDs. This mitigates intermittent skyhook/TheTVDB latency; there's no clean root-cause fix on the Sonarr side. (Editable via the UI too: Settings → Network → "API Request Timeout".)
+
+## Bazarr (subtitles)
+
+`http://bazarr.home` / `http://localhost:6767`. Fetches subtitles for the Sonarr/Radarr libraries. Bridge-networked with `6767:6767` published (same pattern as the *arr trio), `PUID=111`/`PGID=113` (= `debian-transmission`, so subtitle sidecars are owned like the media and don't disturb seeding), and mounts `/var/lib/transmission-daemon/downloads:/downloads` — **the same path Sonarr/Radarr use**, so no Bazarr path-mapping is needed.
+
+**Config is `config.yaml`** (Bazarr 1.6+, not the old `config.ini`) at `/opt/arr/bazarr/config/config.yaml`. Because Bazarr is bridge-networked, its Sonarr/Radarr connections must point at the **LAN IP `192.168.1.28`**, not `127.0.0.1` (the default) — `localhost` inside the bridge container won't reach the *arr containers. To edit the config, **stop Bazarr first** (it rewrites the file on exit and will clobber live edits), then restart:
+```bash
+SONARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/sonarr/config.xml")
+RADARR_KEY=$(ssh reset@192.168.1.28 "grep -oP '(?<=<ApiKey>)[^<]+' /opt/arr/radarr/config.xml")
+ssh reset@192.168.1.28 "cd /opt/arr && docker compose stop bazarr"
+ssh reset@192.168.1.28 "SONARR_KEY='$SONARR_KEY' RADARR_KEY='$RADARR_KEY' sudo -E python3" << 'PY'
+import os, yaml, shutil
+p = "/opt/arr/bazarr/config/config.yaml"; shutil.copy2(p, p + ".bak")
+cfg = yaml.safe_load(open(p))
+cfg["general"]["use_sonarr"] = True; cfg["general"]["use_radarr"] = True
+cfg["sonarr"].update(ip="192.168.1.28", port=8989, apikey=os.environ["SONARR_KEY"])
+cfg["radarr"].update(ip="192.168.1.28", port=7878, apikey=os.environ["RADARR_KEY"])
+yaml.safe_dump(cfg, open(p, "w"), default_flow_style=False, sort_keys=True)
+PY
+ssh reset@192.168.1.28 "cd /opt/arr && docker compose start bazarr"
+```
+Verify the connection worked via Bazarr's API (key is `auth.apikey` in `config.yaml`) — a non-null `total` proves the library synced:
+```bash
+BZ_KEY=$(ssh reset@192.168.1.28 "sudo grep -A2 '^auth:' /opt/arr/bazarr/config/config.yaml | grep apikey | awk '{print \$2}'")
+curl -sf "http://192.168.1.28:6767/api/series?start=0&length=1" -H "X-API-KEY: $BZ_KEY" | python3 -c 'import sys,json;print("series:",json.load(sys.stdin)["total"])'
+curl -sf "http://192.168.1.28:6767/api/movies?start=0&length=1" -H "X-API-KEY: $BZ_KEY" | python3 -c 'import sys,json;print("movies:",json.load(sys.stdin)["total"])'
+```
+**Still requires UI setup** (needs Jamie's accounts/prefs, not scriptable cleanly): a **language profile** created + set as the series/movie default under Settings → Languages, and **subtitle provider accounts** (OpenSubtitles.com, etc.) under Settings → Providers. Without a language profile assigned, Bazarr syncs the library but never searches for subs.
 
 ## Indexer (Prowlarr → IPTorrents)
 
