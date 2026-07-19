@@ -15,7 +15,7 @@ import random
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import make_trans_rpc, to_host_path  # noqa: E402
+from arrlib import make_trans_rpc, to_host_path, parse_bazarr_config, is_update_notice  # noqa: E402
 
 QUIET = "--quiet" in sys.argv
 LOG_FILE = "/opt/arr/monitor.log"
@@ -43,12 +43,17 @@ def arr_health(name, base_url, key, api_version="v3"):
         )
         with urllib.request.urlopen(req, timeout=10) as r:
             items = json.loads(r.read())
-        errors = [i for i in items if i.get("type") in ("error", "warning")]
+        # "New update is available" is expected under pinned images — demote to
+        # info so it doesn't fire an alert every tick. Everything else is real.
+        errors = [i for i in items if i.get("type") in ("error", "warning") and not is_update_notice(i)]
+        notices = [i for i in items if is_update_notice(i)]
         if errors:
             for e in errors:
                 issues.append(f"{name}: [{e['type'].upper()}] {e['message']}")
         else:
             ok_msgs.append(f"{name}: healthy")
+        for n in notices:
+            ok_msgs.append(f"{name}: {n['message']} (pinned image — benign)")
     except Exception as e:
         issues.append(f"{name}: unreachable — {e}")
 
@@ -85,6 +90,47 @@ def check_jellyfin_notification(name, base_url, key):
     else:
         ok_msgs.append(f"{name}: Jellyfin Connect notification present (updates library on import)")
 
+def bazarr_check(name, base_url, config_path):
+    """Liveness + connection-wiring check for Bazarr. Bazarr isn't an *arr —
+    its API and health model differ (no /api/v3/health), and its Sonarr/Radarr
+    wiring lives in config.yaml (untracked), which defaults to use_*=False /
+    ip=127.0.0.1 on a fresh /opt/arr/bazarr. Because Bazarr is bridge-networked,
+    loopback can't reach the *arr containers, so a rebuild silently un-wires it —
+    assert the wiring the same way we assert the Jellyfin Connect notification."""
+    try:
+        with open(config_path) as f:
+            cfg = parse_bazarr_config(f.read())
+    except Exception as e:
+        issues.append(f"{name}: could not read {config_path} — {e}")
+        return
+    apikey = cfg.get("apikey")
+    if not apikey:
+        issues.append(f"{name}: no API key found in config.yaml")
+        return
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/api/system/status",
+            headers={"X-API-KEY": apikey}
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            json.loads(r.read())
+    except Exception as e:
+        issues.append(f"{name}: unreachable — {e}")
+        return
+    drift = []
+    if not cfg.get("use_sonarr"):
+        drift.append("Sonarr connection disabled")
+    if not cfg.get("use_radarr"):
+        drift.append("Radarr connection disabled")
+    for arr in ("sonarr", "radarr"):
+        ip = cfg.get(f"{arr}_ip")
+        if ip in ("127.0.0.1", "localhost"):
+            drift.append(f"{arr} ip={ip} (bridge net can't reach *arr on loopback)")
+    if drift:
+        issues.append(f"{name}: reachable but wiring drift — {'; '.join(drift)}")
+    else:
+        ok_msgs.append(f"{name}: healthy, wired to Sonarr+Radarr")
+
 # Check Sonarr
 sonarr_key = get_api_key("/opt/arr/sonarr/config.xml")
 if sonarr_key:
@@ -111,6 +157,9 @@ if prowlarr_key:
     arr_health("Prowlarr", "http://localhost:9696", prowlarr_key, api_version="v1")
 else:
     issues.append("Prowlarr: could not read API key")
+
+# Check Bazarr (subtitles) — liveness + Sonarr/Radarr wiring (see docstring)
+bazarr_check("Bazarr", "http://localhost:6767", "/opt/arr/bazarr/config/config.yaml")
 
 # Check Transmission — errored torrents
 URL = "http://localhost:9091/transmission/rpc"

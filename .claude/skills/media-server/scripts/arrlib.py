@@ -138,3 +138,58 @@ def parse_title_year(name: str) -> tuple[str | None, int | None]:
     title_part = re.sub(r'\s+', ' ', title_part)
     title = title_part.strip(' -.,([')
     return (title or None, year)
+
+
+def is_update_notice(item: dict) -> bool:
+    """True if an *arr health item is a benign "New update is available" notice.
+
+    Container images are version-pinned (see the media-server skill), so the app
+    inside intentionally lags the newest release and *arr raises this warning on
+    every health poll. It's expected under pinning, not an actionable problem —
+    the monitor demotes it to info so it doesn't fire an alert every cron tick.
+    Real warnings/errors are unaffected. Match on message text (not a code)
+    because *arr doesn't tag update notices with a distinct type.
+    """
+    return (
+        item.get("type") == "warning"
+        and "update is available" in item.get("message", "").lower()
+    )
+
+
+def parse_bazarr_config(text: str) -> dict:
+    """Extract the handful of Bazarr `config.yaml` fields the monitor asserts,
+    without a pyyaml dependency (the cron + test envs stay dependency-free).
+
+    Bazarr 1.6+ stores settings in `config.yaml`. This reads:
+      - ``auth.apikey`` — for the API liveness probe
+      - ``general.use_sonarr`` / ``general.use_radarr`` — connection enabled?
+      - ``sonarr.ip`` / ``radarr.ip`` — must be the LAN IP, not 127.0.0.1;
+        Bazarr is bridge-networked and can't reach the *arr containers on
+        loopback, so a rebuild that resets these silently un-wires it.
+
+    The current top-level section is tracked by zero-indent lines, so the
+    `apikey`/`password` keys that recur in every provider block don't collide
+    with ``auth.apikey``. Takes the file text (not a path) to stay pure and
+    trivially testable. Returns a dict with whatever keys were found:
+    ``apikey`` (str), ``use_sonarr``/``use_radarr`` (bool), and
+    ``sonarr_ip``/``radarr_ip`` (str).
+    """
+    out: dict = {}
+    section = None
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        if re.match(r'^\S', line):
+            section = line.split(':', 1)[0].strip()
+            continue
+        m = re.match(r'\s+(\w+):\s*(.*?)\s*$', line)
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2).strip('\'"')
+        if section == 'auth' and key == 'apikey':
+            out['apikey'] = val
+        elif section == 'general' and key in ('use_sonarr', 'use_radarr'):
+            out[key] = val.lower() == 'true'
+        elif section in ('sonarr', 'radarr') and key == 'ip':
+            out[f'{section}_ip'] = val
+    return out

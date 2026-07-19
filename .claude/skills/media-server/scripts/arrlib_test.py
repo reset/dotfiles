@@ -138,5 +138,100 @@ class TestMakeTransRpc(unittest.TestCase):
         self.assertEqual(result, {'ok': True})
 
 
+class TestIsUpdateNotice(unittest.TestCase):
+    """is_update_notice demotes the benign "update available" warning that
+    pinned images raise on every poll, without swallowing real warnings."""
+
+    def test_update_warning_is_notice(self):
+        self.assertTrue(arrlib.is_update_notice(
+            {"type": "warning", "message": "New update is available: v4.0.19.2979"}))
+
+    def test_real_warning_is_not_notice(self):
+        self.assertFalse(arrlib.is_update_notice(
+            {"type": "warning", "message": "Indexers are unavailable due to failures"}))
+
+    def test_error_is_not_notice(self):
+        # Even if an error mentioned an update, an error must stay an issue.
+        self.assertFalse(arrlib.is_update_notice(
+            {"type": "error", "message": "Download client is not available"}))
+
+    def test_missing_fields_safe(self):
+        self.assertFalse(arrlib.is_update_notice({}))
+
+
+class TestParseBazarrConfig(unittest.TestCase):
+    """parse_bazarr_config reads a few fields from Bazarr's config.yaml without
+    pyyaml. The tricky bits: `apikey` recurs in provider blocks (must not shadow
+    auth.apikey), and the bridge-networking wiring (use_*/ip) is what a rebuild
+    silently resets — the monitor asserts it, so the parser must read it exactly.
+    """
+
+    # Mirrors real config.yaml key order (yaml.safe_dump sort_keys=True):
+    # auth, general, opensubtitlescom (a provider with its OWN apikey), radarr,
+    # sonarr. Indentation and quoting match what Bazarr writes.
+    WIRED = (
+        "---\n"
+        "auth:\n"
+        "  apikey: AUTHKEY123\n"
+        "  password: ''\n"
+        "  type: null\n"
+        "general:\n"
+        "  use_radarr: true\n"
+        "  use_sonarr: true\n"
+        "opensubtitlescom:\n"
+        "  apikey: PROVIDERKEY_SHOULD_BE_IGNORED\n"
+        "  password: 'secret'\n"
+        "radarr:\n"
+        "  apikey: ''\n"
+        "  ip: 192.168.1.28\n"
+        "  port: 7878\n"
+        "sonarr:\n"
+        "  apikey: ''\n"
+        "  ip: 192.168.1.28\n"
+        "  port: 8989\n"
+    )
+
+    def test_reads_auth_apikey_not_provider_apikey(self):
+        cfg = arrlib.parse_bazarr_config(self.WIRED)
+        self.assertEqual(cfg['apikey'], 'AUTHKEY123')
+
+    def test_reads_wiring_when_configured(self):
+        cfg = arrlib.parse_bazarr_config(self.WIRED)
+        self.assertTrue(cfg['use_sonarr'])
+        self.assertTrue(cfg['use_radarr'])
+        self.assertEqual(cfg['sonarr_ip'], '192.168.1.28')
+        self.assertEqual(cfg['radarr_ip'], '192.168.1.28')
+
+    def test_detects_rebuild_drift_defaults(self):
+        # A fresh /opt/arr/bazarr defaults to use_*=False and ip=127.0.0.1 —
+        # the exact state the monitor must flag as un-wired.
+        drifted = (
+            "auth:\n"
+            "  apikey: K\n"
+            "general:\n"
+            "  use_radarr: false\n"
+            "  use_sonarr: false\n"
+            "radarr:\n"
+            "  ip: 127.0.0.1\n"
+            "sonarr:\n"
+            "  ip: 127.0.0.1\n"
+        )
+        cfg = arrlib.parse_bazarr_config(drifted)
+        self.assertFalse(cfg['use_sonarr'])
+        self.assertFalse(cfg['use_radarr'])
+        self.assertEqual(cfg['sonarr_ip'], '127.0.0.1')
+        self.assertEqual(cfg['radarr_ip'], '127.0.0.1')
+
+    def test_missing_fields_absent_from_result(self):
+        # Partial/garbage config must not raise and must not invent keys.
+        cfg = arrlib.parse_bazarr_config("general:\n  some_other_key: true\n")
+        self.assertNotIn('apikey', cfg)
+        self.assertNotIn('use_sonarr', cfg)
+        self.assertNotIn('sonarr_ip', cfg)
+
+    def test_empty_input(self):
+        self.assertEqual(arrlib.parse_bazarr_config(''), {})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
