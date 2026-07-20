@@ -11,8 +11,8 @@ set -euo pipefail
 # real LAN-vs-tunnel decision itself; this segment just tells you which path
 # ssh is likely to take.
 
-home_icon=$'\xef\x80\x95'   # U+F015 nf-fa-home
-globe_icon=$'\xef\x82\xac'  # U+F0AC nf-fa-globe
+home_icon='🏠'
+globe_icon='🌐'
 
 if ifconfig 2>/dev/null | grep -q "inet 192\.168\.1\."; then
   printf '%s LAN' "$home_icon"
