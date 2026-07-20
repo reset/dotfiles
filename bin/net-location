@@ -11,11 +11,13 @@ set -euo pipefail
 # real LAN-vs-tunnel decision itself; this segment just tells you which path
 # ssh is likely to take.
 
-home_icon='🏠'
-globe_icon='🌐'
+home_icon=$'\xef\x80\x95'   # U+F015 nf-fa-home
+globe_icon=$'\xef\x82\xac'  # U+F0AC nf-fa-globe
 
+# Colour matches battery-icon's palette: colour2 (green) reads as "settled",
+# colour3 (amber) as "you're out". #[default] resets fg for the next segment.
 if ifconfig 2>/dev/null | grep -q "inet 192\.168\.1\."; then
-  printf '%s' "$home_icon"
+  printf '#[fg=colour2]%s#[default]' "$home_icon"
 else
-  printf '%s' "$globe_icon"
+  printf '#[fg=colour3]%s#[default]' "$globe_icon"
 fi
