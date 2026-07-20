@@ -46,7 +46,7 @@ Run `dot ls-files` to see the current tracked set. The structure as of this writ
 | `.vimrc`, `.ctags`, `.editorconfig` | Editor config |
 | `.p10k.zsh`, `.fzf.zsh`, `.git-completion.zsh` | Shell extensions |
 | `.gnupg/gpg.conf`, `.gnupg/gpg-agent.conf` | GPG / commit signing |
-| `.config/alacritty/alacritty.toml` | Terminal emulator |
+| `.config/ghostty/config` | Terminal emulator |
 | `.config/direnv/direnv.toml`, `.config/direnv/direnvrc` | direnv |
 | `.claude/CLAUDE.md`, `CLAUDE.md`, `README.md` | Personal Claude config, home-dir notes, bootstrap docs |
 | `.claude/skills/<name>/` | Personal Claude Code skills (`dotfiles`, `grab`, `media-server`, `seo-audit`, `static-site-engineer`, `wp-migrate`) — tracked so they bootstrap on a fresh machine |
@@ -114,7 +114,7 @@ if OS.mac?
   brew "colima"                        # macOS-only formula
   brew "mas"                           # Mac App Store CLI
   cask "1password"
-  cask "alacritty"
+  cask "ghostty"
   ...
   mas "1Password for Safari", id: 1569813296
   mas "Windows App", id: 1295203466
