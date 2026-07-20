@@ -15,7 +15,7 @@ home_icon='🏠'
 globe_icon='🌐'
 
 if ifconfig 2>/dev/null | grep -q "inet 192\.168\.1\."; then
-  printf '%s LAN' "$home_icon"
+  printf '%s' "$home_icon"
 else
-  printf '%s remote' "$globe_icon"
+  printf '%s' "$globe_icon"
 fi
