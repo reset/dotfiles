@@ -10,6 +10,10 @@ export PATH=$HOME/.dotnet/tools:$GOPATH/bin:$JAVA_HOME/bin:/usr/local/bin:/usr/l
 
 fpath=(~/.zsh ~/.zsh/completions $fpath)
 
+# Prune dangling completion symlinks (e.g. a CLI removed from ~/code/rog) so
+# compinit doesn't error on a broken link. -L reports unresolvable links as type l.
+find -L ~/.zsh/completions -type l -delete 2>/dev/null
+
 plugins=(git z tmux ssh-agent)
 zstyle :omz:plugins:ssh-agent agent-forwarding on
 source $ZSH/oh-my-zsh.sh
