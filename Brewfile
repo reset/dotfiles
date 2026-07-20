@@ -77,7 +77,6 @@ if OS.mac?
   cask "obs"
   cask "p4"
   cask "p4v"
-  cask "postman"
   cask "rar"
   cask "slack"
   cask "steam"
