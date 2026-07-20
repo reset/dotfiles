@@ -1,13 +1,13 @@
 ---
 name: dotfiles
-description: Manage Jamie's dotfiles — the bare-repo home-directory setup at ~/.dotfiles/ (origin github.com/reset/dotfiles). Use whenever the user wants to add, edit, install, or persist anything that lives under $HOME and should travel across machines. Triggers on "add X to my dotfiles", "commit my .zshrc / .gitconfig / etc.", "install X via brew/cask/mas (and remember it)", "add a script to ~/bin", "find the App Store ID for X", "what's in my dotfiles", "set up a new mac", "rerun setup.sh", "what's the dot command", and anywhere the user is reaching for git in $HOME (use `dot` instead). Also fires when installing GUI apps or CLI tools that should persist for future machine reprovisioning — the install isn't done until setup.sh has been updated and the change pushed.
+description: Manage Jamie's dotfiles — the bare-repo home-directory setup at ~/.dotfiles/ (origin github.com/reset/dotfiles). Use whenever the user wants to add, edit, install, or persist anything that lives under $HOME and should travel across machines. Triggers on "add X to my dotfiles", "commit my .zshrc / .gitconfig / etc.", "install X via brew/cask/mas (and remember it)", "add a script to ~/bin", "find the App Store ID for X", "what's in my dotfiles", "set up a new mac", "rerun setup.sh", "what's the dot command", and anywhere the user is reaching for git in $HOME (use `dot` instead). Also fires when installing or removing GUI apps or CLI tools that should persist for future machine reprovisioning — the change isn't done until the ~/Brewfile (for packages) or setup.sh has been updated and pushed.
 ---
 
 # Dotfiles
 
 Jamie's home directory is a Git bare repo at `~/.dotfiles/` with `$HOME` as the working tree. Origin: `github.com/reset/dotfiles`. Everything in this skill assumes the `dot` wrapper handles the bare-repo plumbing.
 
-The single most important habit: **install + persist is one operation, not two.** When Jamie installs something he wants on his machines (a brew package, a cask, a Mac App Store app, a `~/bin` script), the work isn't done until `bin/setup.sh` has the install line and the change is pushed to the dotfiles remote. Otherwise the next machine reprovision loses it silently.
+The single most important habit: **install + persist is one operation, not two.** When Jamie installs something he wants on his machines (a brew package, a cask, a Mac App Store app, a `~/bin` script), the work isn't done until it's recorded in the tracked manifest — the `~/Brewfile` for packages, `bin/setup.sh` for everything else — and the change is pushed to the dotfiles remote. Otherwise the next machine reprovision loses it silently.
 
 ## The `dot` wrapper
 
@@ -24,7 +24,8 @@ dot push                # push to github.com:reset/dotfiles
 
 Two gotchas:
 
-- **`dot status` hides untracked files** — but not by accident. The bootstrap procedure runs `git config --local status.showUntrackedFiles no` against the bare repo so `$HOME`'s thousands of untracked files don't drown out the signal. If a fresh clone is showing all of `$HOME`, that config step was skipped — re-run it. To check whether a specific file is tracked, use `dot ls-files | grep <name>` or `dot status --short -- <path>`.
+- **`dot status` hides untracked files** — but not by accident. The bootstrap procedure runs `git config --local status.showUntrackedFiles no` against the bare repo so `$HOME`'s thousands of untracked files don't drown out the signal. If a fresh clone is showing all of `$HOME`, that config step was skipped — re-run it. To check whether a specific file is tracked, use `dot ls-files -- "$HOME"` or `dot status --short -- <path>`.
+- **`dot ls-files` scopes to the current directory.** Like plain `git ls-files`, it only lists tracked files under CWD — so when you're sitting in a project dir (not `$HOME`), a bare `dot ls-files` or `dot ls-files | grep <name>` returns nothing and looks like "not tracked." Always pass an absolute pathspec: `dot ls-files -- "$HOME"` for the full set, `dot ls-files -- "$HOME/Brewfile"` to test one file. Same applies to `dot grep` — scope it with `-- "$HOME"`.
 - **`dot diff <path>` may complain "ambiguous argument"** when the path isn't already known to git (new file, recently moved). Use `dot diff -- <path>` to disambiguate.
 
 Never run `git` directly in `$HOME` for dotfile work — it'll either fail (no `.git` dir) or surprise you (if you happen to be inside a nested repo). Always `dot`.
@@ -36,7 +37,8 @@ Run `dot ls-files` to see the current tracked set. The structure as of this writ
 | Path | Purpose |
 |------|---------|
 | `bin/dot` | The wrapper script itself |
-| `bin/setup.sh` | Bootstrap a fresh Mac/Ubuntu — installs everything |
+| `bin/setup.sh` | Bootstrap a fresh Mac/Ubuntu — installs Homebrew, runs `brew bundle` against `~/Brewfile`, sets up symlinks/system config/framework clones |
+| `Brewfile` | The package manifest — every `brew`/`cask`/`mas` install, consumed by `brew bundle`. This is where package installs are recorded (not inline in `setup.sh`) |
 | `bin/update.sh` | Upgrade installed packages (`brew update && brew upgrade`) |
 | `.zshrc`, `.zprofile`, `.profile` | Shell config |
 | `.gitconfig`, `.gitignore-global` | Git config (aliases, signing, ignore patterns) |
@@ -92,32 +94,32 @@ That's it. The file lives where it needs to live (the app reads it from the real
 
 For new scripts in `~/bin/`: write the script with no extension (the shebang declares the language), `chmod +x`, sanity-check it, then `dot add` + commit + push.
 
-## `bin/setup.sh` — the install manifest
+## `~/Brewfile` — the package manifest
 
-`bin/setup.sh` is the source of truth for "what should be installed on a fresh Jamie machine." It has four install lanes for macOS — adding to the right one is the whole game.
+The **`~/Brewfile`** (tracked as `Brewfile` at the repo root) is the source of truth for "what should be installed on a fresh Jamie machine." It's a standard `brew bundle` Brewfile — `brew`, `cask`, `mas`, and `tap` lines. `bin/setup.sh` doesn't list packages inline; both `_install_packages_macos` and `_install_packages_ubuntu` just run `brew bundle install --file="$HOME/Brewfile"`. Adding a package = adding one line to the Brewfile, in the right lane.
 
-### The four lanes
+### Brewfile structure
 
-```bash
-function _install_packages_macos () {
-  # Lane 1: Homebrew formulae (CLI tools)
-  brew install \
-    awscli \
-    ...
+Two blocks, split by platform. The top block is the cross-platform set (installs on macOS and Linux/linuxbrew alike); the `if OS.mac?` block holds everything macOS-only — GUI casks, `mas` apps, and formulae with no useful Linux bottle. The guard keeps `brew bundle` clean on a Linux host.
 
-  # Lane 2: Homebrew casks (GUI apps not in App Store)
-  brew install --cask 1password
-  brew install --cask alacritty
+```ruby
+# Cross-platform CLI tools — macOS + Linux
+brew "awscli"
+brew "gh"
+brew "git"
+...
+
+if OS.mac?
+  tap "jaxxstorm/tap"
+  brew "colima"                        # macOS-only formula
+  brew "mas"                           # Mac App Store CLI
+  cask "1password"
+  cask "alacritty"
   ...
-
-  # Lane 3: Mac App Store apps (require Apple ID, often free apps with App Store distribution)
-  mas install 1295203466 # Windows RDP
-  mas install 1569813296 # 1Password for Safari
-  ...
-}
+  mas "1Password for Safari", id: 1569813296
+  mas "Windows App", id: 1295203466
+end
 ```
-
-There's also `_install_packages_ubuntu` for Linux — only relevant if Jamie's setting up a Linux box, otherwise ignore it.
 
 ### Picking a lane
 
@@ -125,11 +127,11 @@ There's also `_install_packages_ubuntu` for Linux — only relevant if Jamie's s
 
 The decision tree:
 
-1. **Brew formula** if it's a CLI tool. Long alphabetized list — slot the new entry in.
-2. **Brew cask** if it's a GUI app and `brew search --cask <name>` finds it. Most GUI apps land here (Slack, Steam, Discord, VS Code, 1Password desktop, etc.). One line each, alphabetized.
-3. **Mac App Store (`mas`)** only when neither of the above is available. The classic cases: **Safari extensions** (App Store distribution is mandated by Apple's Safari extension entitlement), **Apple-distributed apps** (Pages, Keynote, Xcode), and a handful of paid apps the publisher only ships through the App Store (Magnet, etc.). Each line: `mas install <id> # <human name>`.
+1. **`brew "<name>"`** if it's a CLI tool. Cross-platform tools go in the top block; macOS-only ones inside `if OS.mac?`. Alphabetized — slot the new entry in.
+2. **`cask "<name>"`** if it's a GUI app and `brew search --cask <name>` finds it. Most GUI apps land here (Slack, Steam, Discord, VS Code, 1Password desktop, etc.). Casks are macOS-only, so they live inside the `if OS.mac?` block. One line each, alphabetized.
+3. **`mas "<name>", id: <id>`** only when neither of the above is available. The classic cases: **Safari extensions** (App Store distribution is mandated by Apple's Safari extension entitlement), **Apple-distributed apps** (Final Cut Pro, Xcode), and a handful of paid apps the publisher only ships through the App Store (Magnet, etc.). Also inside `if OS.mac?`.
 
-When in doubt: run `brew search --cask <name>` first. If it returns a hit, use cask. Only run `mas search <name>` after confirming brew has no answer.
+When in doubt: run `brew search --cask <name>` first. If it returns a hit, use `cask`. Only run `mas search <name>` after confirming brew has no answer.
 
 ### Finding a Mac App Store ID
 
@@ -137,15 +139,19 @@ When in doubt: run `brew search --cask <name>` first. If it returns a hit, use c
 mas search "<app name>"
 ```
 
-First column is the numeric ID. Pick the right row (sometimes there are multiple matches — e.g. searching "1Password" returns both the manager and the Safari extension). Use that ID in `mas install <id>`.
+First column is the numeric ID. Pick the right row (sometimes there are multiple matches — e.g. searching "1Password" returns both the manager and the Safari extension). Use that ID in the `id:` field: `mas "<human name>", id: <id>`.
 
-### Comment style
+### `mas` line format
 
-Always include a `# <human name>` trailing comment on `mas install` lines — the numeric IDs are otherwise opaque. Brew formulae and casks don't need comments since the package name is self-describing.
+`mas` lines carry a human-readable name **and** the numeric id — `mas "Magnet", id: 441258766` — so the name is self-documenting. `brew` and `cask` lines don't need a comment since the package name is already the identifier. If a cask's slug is cryptic, a trailing `# <what it is>` comment is fine.
 
-### Other extension points in `setup.sh`
+### Applying + verifying a Brewfile change
 
-`_install_packages_macos` is the most-edited function, but a few others are worth knowing about when a change isn't a package install:
+`brew bundle` is declarative and idempotent — after editing the Brewfile you can re-run `brew bundle install --file="$HOME/Brewfile"` to converge this machine (it skips anything already installed). Removing a line does **not** uninstall the package; run the matching `brew uninstall`/`brew uninstall --cask`/`mas uninstall` yourself if you want it gone from the current machine now (`brew bundle cleanup` would prune everything not in the file, which is broader than you usually want).
+
+### Extension points in `setup.sh`
+
+Packages live in the Brewfile, but `setup.sh` still owns everything that isn't a package install. When a change is one of these, edit the function directly:
 
 - **`_configure_system_macos`** — runs `defaults write` for macOS system preferences and the caps-lock-to-control remap. To make a new `defaults write` persist across machines, add it here. As of this writing the only entry is `NSGlobalDomain com.apple.swipescrolldirection -bool false` (natural scroll off).
 - **`_install_symlinks`** — creates `/usr/local/bin/git`, `/usr/local/bin/gpg`, `/usr/local/bin/gpg-agent`, `/usr/local/bin/zsh`, and `/usr/local/bin/pinentry` as symlinks pointing into the Homebrew prefix. This exists because **`.gitconfig` references `/usr/local/bin/gpg` directly** (`gpg.program`) — the symlink lets that path resolve regardless of whether Homebrew is at `/opt/homebrew` (Apple Silicon) or `/usr/local` (Intel). If you change a binary path in `.gitconfig` or move Homebrew, both must move together.
@@ -156,15 +162,15 @@ Always include a `# <human name>` trailing comment on `mas install` lines — th
 
 When the user says something like "install X" with the implicit expectation that it persists across machines:
 
-1. **Find the install command** for the right lane (`brew install`, `brew install --cask`, or `mas install <id>` — for mas, run `mas search` first).
-2. **Run the install** so it's on this machine right now.
-3. **Add the corresponding line to `bin/setup.sh`** in the right lane.
-4. **Verify with `dot diff -- bin/setup.sh`** that the change is what you expect.
-5. **Commit and push:** `dot add bin/setup.sh && dot commit -m "..." && dot push`.
+1. **Pick the lane** (`brew`, `cask`, or `mas` — for mas, run `mas search "<name>"` to get the id first).
+2. **Run the install** so it's on this machine right now (`brew install <name>`, `brew install --cask <name>`, or `mas install <id>`).
+3. **Add the corresponding line to `~/Brewfile`** in the right lane — cross-platform `brew` at the top, everything macOS-only (casks, `mas`, macOS-only formulae) inside the `if OS.mac?` block. Keep the alphabetization.
+4. **Verify with `dot diff -- "$HOME/Brewfile"`** that the change is what you expect.
+5. **Commit and push:** `dot add "$HOME/Brewfile" && dot commit -m "..." && dot push`.
 
-If `mas install` reports `Already installed`, that's fine — it just means the install ran successfully on a previous machine setup. Still update `setup.sh` if it's missing the line.
+The reverse — "remove / uninstall X" — is the mirror image: delete the line from `~/Brewfile`, run the matching `brew uninstall`/`brew uninstall --cask`/`mas uninstall` to drop it from this machine, then commit + push.
 
-If the user just wants to install something temporarily (testing a tool, evaluating an app), don't update `setup.sh`. Ask if it's unclear.
+If the user just wants to install something temporarily (testing a tool, evaluating an app), don't touch the Brewfile. Ask if it's unclear.
 
 ## Fresh-machine bootstrap
 
@@ -198,7 +204,7 @@ The `status.showUntrackedFiles no` line is what makes `dot status` usable — wi
 bash ~/bin/setup.sh
 ```
 
-Order inside `setup.sh`: Homebrew → packages (formulae + casks + mas) → macOS system config → `/usr/local/bin` symlinks → `$HOME` framework clones (oh-my-zsh, tmux, base16, p10k, vim-plug). Don't reorder — packages depend on Homebrew, symlinks depend on packages, framework clones depend on the directory layout being settled.
+Order inside `setup.sh`: Homebrew → packages (`brew bundle install` against `~/Brewfile` — formulae + casks + mas) → macOS system config → `/usr/local/bin` symlinks → `$HOME` framework clones (oh-my-zsh, tmux, base16, p10k, vim-plug). Don't reorder — packages depend on Homebrew, symlinks depend on packages, framework clones depend on the directory layout being settled.
 
 ### Stage 4: Update everything
 
@@ -241,14 +247,15 @@ If you're unsure whether something belongs, ask. The bias is "narrow tracking" �
 |------|----------|
 | Add a new tracked file | `dot add <path>` → `dot commit -m "..."` → `dot push` |
 | Edit an already-tracked file | edit it → `dot diff -- <path>` → `dot add <path>` → commit + push |
-| List everything tracked | `dot ls-files` |
-| Check if file X is tracked | `dot ls-files \| grep <name>` |
+| List everything tracked | `dot ls-files -- "$HOME"` (bare `dot ls-files` scopes to CWD) |
+| Check if file X is tracked | `dot ls-files -- "$HOME/<path>"` or `dot status --short -- <path>` |
 | Customize tmux | edit `~/.tmux.conf.local` (NOT `.tmux.conf`) → commit |
 | Find a brew package | `brew search <name>` (formula) or `brew search --cask <name>` (GUI) |
 | Find a Mac App Store ID | `mas search "<app name>"` (first column = ID) — only when brew has no answer |
-| Install + persist a brew tool | `brew install <name>` → add to formula list in `setup.sh` → commit |
-| Install + persist a cask | `brew install --cask <name>` → add cask line to `setup.sh` → commit |
-| Install + persist a mas app | `mas search` to find ID → `mas install <id>` → add `mas install <id> # <name>` to `setup.sh` → commit |
+| Install + persist a brew tool | `brew install <name>` → add `brew "<name>"` to `~/Brewfile` → commit |
+| Install + persist a cask | `brew install --cask <name>` → add `cask "<name>"` inside the `if OS.mac?` block in `~/Brewfile` → commit |
+| Install + persist a mas app | `mas search` to find ID → `mas install <id>` → add `mas "<name>", id: <id>` inside `if OS.mac?` in `~/Brewfile` → commit |
+| Remove + un-persist a package | delete its line from `~/Brewfile` → `brew uninstall [--cask] <name>` (or `mas uninstall <id>`) → commit |
 | Bring this machine up to date | `bash ~/bin/update.sh` (runs `brew update && brew upgrade`) |
 | Bootstrap a fresh machine | See "Fresh-machine bootstrap" — multi-stage; not just `bash ~/bin/setup.sh` |
 
