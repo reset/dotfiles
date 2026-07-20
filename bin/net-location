@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Home-LAN detection is intentionally local-only: check whether any interface
+# holds an address in the home subnet (192.168.1.0/24). No network round-trip,
+# so it's cheap enough to run on every status redraw.
+#
+# Caveat: this is a hint, not a guarantee. If you're on a *different* network
+# that also hands out 192.168.1.x, this reads "LAN" even though the home boxes
+# are only reachable via the Cloudflare tunnel. The ssh ProxyCommand makes the
+# real LAN-vs-tunnel decision itself; this segment just tells you which path
+# ssh is likely to take.
+
+home_icon=$'\xef\x80\x95'   # U+F015 nf-fa-home
+globe_icon=$'\xef\x82\xac'  # U+F0AC nf-fa-globe
+
+if ifconfig 2>/dev/null | grep -q "inet 192\.168\.1\."; then
+  printf '%s LAN' "$home_icon"
+else
+  printf '%s remote' "$globe_icon"
+fi
