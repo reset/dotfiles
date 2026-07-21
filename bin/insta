@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Copyright (C) 2026 One More Game - All Rights Reserved
+# Unauthorized copying of this file, via any medium is strictly prohibited
+# Proprietary and confidential
+set -euo pipefail
+
+# Thin wrapper putting the InstagramAccountCli shim on PATH from anywhere.
+# Mirrors ~/bin/steam-account — see it for the full reasoning. Both things it does
+# are required or the underlying `dotnet run` breaks:
+#   1. .NET 10 on PATH via the repo's own nix flake (`direnv exec`) — the ambient
+#      dotnet (e.g. rog's nix-pinned net8) can't build this net10 project.
+#   2. cwd inside the repo so `dotnet` resolves global.json from here, not from
+#      wherever you invoked `insta` (rog's net8 pin would otherwise win and fail).
+# One-time on a new machine: `direnv allow ~/code/SteamAccountCli`.
+readonly REPO="$HOME/code/SteamAccountCli"
+cd "$REPO"
+exec direnv exec "$REPO" "$REPO/bin/insta" "$@"
