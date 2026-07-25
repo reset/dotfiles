@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Contributor leaderboard for a GitHub org (default: PlayOneMoreGame).
+
+Ranks contributors by commit activity and authored code impact across active
+repos, over a time window (default: since the start of the current calendar
+year). "Impact" counts only hand-authored source lines — generated (.g.cs),
+Unity-serialized (.prefab/.asset/.anim/...), Wwise work units, binary/LFS,
+vendored, and lockfile diffs are excluded so editor churn can't dominate.
+
+Scope = active repos: non-archived, non-fork, pushed within the window.
+Commits are counted on each repo's default branch (landed work only).
+
+Local clones under --local-base are used as-is; anything missing is
+shallow-cloned into a cache dir. Pass --refresh to re-fetch cached clones.
+
+Requires: git, gh (authenticated).
+
+Examples:
+  omg-contributor-leaderboard
+  omg-contributor-leaderboard --since 2025-01-01 --sort impact
+  omg-contributor-leaderboard --org SomeOrg --top 20 --refresh
+"""
+import argparse, collections, datetime, json, os, subprocess, sys
+
+# Known split git identities -> canonical display name (normalized key -> name).
+ALIASES = {"eric h.": "Eric Hill"}
+# AI / automation accounts to exclude entirely (normalized display names).
+DROP = {"claude", "wonder-stormbreaker"}
+# Throwaway / test repos to skip even when active.
+EXCLUDE_REPOS = {"demo-repository", "validation-payload-test", "diane-test-project"}
+
+# Impact = authored source only. Everything else is editor/machine output.
+SRC_EXT = {".cs", ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".cpp",
+           ".cc", ".cxx", ".c", ".h", ".hpp", ".java", ".rb", ".php", ".css",
+           ".scss", ".sass", ".less", ".html", ".md", ".sh", ".bash", ".tf",
+           ".hcl", ".sql", ".vue", ".svelte", ".lua", ".yml", ".yaml", ".toml",
+           ".gd", ".mm", ".swift", ".kt"}
+SEG_SKIP = {"node_modules", "dist", "build", "bin", "obj", "vendor", "Pods",
+            ".yarn", "Library", "Temp", "Logs", ".next", ".nuxt", "coverage",
+            "__pycache__"}
+BOT_MARKERS = ("[bot]", "github-actions", "dependabot")
+
+
+def sh(*args, **kw):
+    return subprocess.run(args, capture_output=True, text=True, **kw)
+
+
+def active_repos(org, since_epoch):
+    out = sh("gh", "repo", "list", org, "--limit", "500", "--json",
+             "name,isArchived,isFork,pushedAt")
+    if out.returncode != 0:
+        sys.exit(f"gh repo list failed: {out.stderr.strip()}")
+    repos = []
+    for r in json.loads(out.stdout):
+        if r["isArchived"] or r["isFork"]:
+            continue
+        if r["name"] in EXCLUDE_REPOS:
+            continue
+        pushed = datetime.datetime.fromisoformat(
+            r["pushedAt"].replace("Z", "+00:00")).timestamp()
+        if pushed >= since_epoch:
+            repos.append(r["name"])
+    return sorted(repos)
+
+
+def resolve_path(name, org, local_base, cache, refresh):
+    local = os.path.join(local_base, name)
+    if os.path.isdir(os.path.join(local, ".git")):
+        return local
+    dest = os.path.join(cache, name)
+    if os.path.isdir(os.path.join(dest, ".git")):
+        if refresh:
+            sh("git", "-C", dest, "fetch", "--quiet", "origin")
+        return dest
+    url = f"https://github.com/{org}/{name}.git"
+    print(f"  cloning {name} ...", file=sys.stderr)
+    r = sh("git", "clone", "--quiet", "--shallow-since=2025-01-01",
+           "--no-tags", "--single-branch", url, dest)
+    if r.returncode != 0:  # shallow-since can choke on some histories
+        sh("git", "clone", "--quiet", "--depth", "500", "--no-tags",
+           "--single-branch", url, dest)
+    return dest if os.path.isdir(os.path.join(dest, ".git")) else None
+
+
+def default_ref(path):
+    for ref in ("refs/remotes/origin/HEAD", "origin/main", "origin/master",
+                "main", "master", "HEAD"):
+        if sh("git", "-C", path, "rev-parse", "--verify", "-q", ref).returncode == 0:
+            return ref
+    return "HEAD"
+
+
+def counts_lines(path):
+    segs = path.split("/")
+    if any(s in SEG_SKIP for s in segs):
+        return False
+    base = segs[-1].lower()
+    if path.endswith(".g.cs"):
+        return False
+    if base.endswith((".min.js", ".min.css")):
+        return False
+    ext = ("." + base.rsplit(".", 1)[1]) if "." in base else ""
+    return ext in SRC_EXT
+
+
+def is_bot(name, email):
+    n, e = name.lower(), email.lower()
+    if e in ("action@github.com", "noreply@github.com"):
+        return True
+    return any(m in n or m in e for m in BOT_MARKERS)
+
+
+def main():
+    year = datetime.date.today().year
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--org", default="PlayOneMoreGame")
+    ap.add_argument("--since", default=f"{year}-01-01",
+                    help="window start, YYYY-MM-DD (default: Jan 1 this year)")
+    ap.add_argument("--local-base", default=os.path.expanduser("~/code"),
+                    help="where existing local clones live")
+    ap.add_argument("--cache", default=os.path.expanduser("~/.cache/omg-leaderboard"),
+                    help="where missing repos get shallow-cloned")
+    ap.add_argument("--sort", choices=("commits", "impact"), default="commits")
+    ap.add_argument("--top", type=int, default=0, help="limit rows (0 = all)")
+    ap.add_argument("--refresh", action="store_true",
+                    help="git fetch cached clones before counting")
+    args = ap.parse_args()
+
+    since_epoch = datetime.datetime.fromisoformat(args.since).timestamp()
+    os.makedirs(args.cache, exist_ok=True)
+
+    repos = active_repos(args.org, since_epoch)
+    print(f"# {args.org}: {len(repos)} active repos since {args.since}", file=sys.stderr)
+
+    byemail = {}
+
+    def rec(email):
+        return byemail.setdefault(email, {"names": collections.Counter(),
+                "commits": 0, "add": 0, "del": 0, "repos": set()})
+
+    for name in repos:
+        path = resolve_path(name, args.org, args.local_base, args.cache, args.refresh)
+        if not path:
+            print(f"  skip (no clone): {name}", file=sys.stderr)
+            continue
+        out = sh("git", "-C", path, "log", default_ref(path),
+                 f"--since={args.since}", "--no-merges", "--numstat",
+                 "--pretty=format:@@@%aN|%aE").stdout
+        cur = None
+        for line in out.splitlines():
+            if line.startswith("@@@"):
+                nm, _, em = line[3:].partition("|")
+                em, nm = em.strip().lower(), nm.strip()
+                if is_bot(nm, em):
+                    cur = None
+                    continue
+                cur = rec(em)
+                cur["names"][nm] += 1
+                cur["commits"] += 1
+                cur["repos"].add(name)
+            elif cur is not None and "\t" in line:
+                a, d, fp = line.split("\t", 2)
+                if a == "-" or d == "-" or not counts_lines(fp):
+                    continue
+                cur["add"] += int(a)
+                cur["del"] += int(d)
+
+    # Merge emails sharing a (aliased) display name; drop bots.
+    def norm(s):
+        return " ".join(s.lower().split())
+    people = {}
+    for s in byemail.values():
+        disp = s["names"].most_common(1)[0][0]
+        disp = ALIASES.get(norm(disp), disp)
+        key = norm(disp)
+        if key in DROP:
+            continue
+        p = people.setdefault(key, {"disp": disp, "commits": 0, "add": 0,
+                                     "del": 0, "repos": set()})
+        p["commits"] += s["commits"]
+        p["add"] += s["add"]
+        p["del"] += s["del"]
+        p["repos"] |= s["repos"]
+
+    def churn(p):
+        return p["add"] + p["del"]
+
+    rows = [p for p in people.values() if p["commits"]]
+    if args.sort == "impact":
+        rows.sort(key=lambda p: (churn(p), p["commits"]), reverse=True)
+    else:
+        rows.sort(key=lambda p: (p["commits"], churn(p)), reverse=True)
+    if args.top:
+        rows = rows[:args.top]
+
+    print(f"\nContributor leaderboard — {args.org} — authored since {args.since}")
+    print(f"Scope: {len(repos)} active repos, default branch (landed work); "
+          f"impact = authored source lines only\n")
+    hdr = (f"{'#':>2}  {'contributor':<22} {'commits':>7} {'+lines':>9} "
+           f"{'-lines':>9} {'net churn':>10} {'repos':>5}")
+    print(hdr)
+    print("-" * len(hdr))
+    for i, p in enumerate(rows, 1):
+        print(f"{i:>2}  {p['disp'][:22]:<22} {p['commits']:>7} {p['add']:>9} "
+              f"{p['del']:>9} {churn(p):>10} {len(p['repos']):>5}")
+    print(f"\n({len(rows)} contributors; sorted by {args.sort}. "
+          f"editor-serialized/generated/binary/vendored excluded from line counts)")
+
+
+if __name__ == "__main__":
+    main()
