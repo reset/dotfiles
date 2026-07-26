@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# unity-dismiss-modal — unblock a hung Unity editor by dismissing its save-prompt modal.
+#
+# Unity's "Prefab/Scene Has Been Modified — Save / Discard Changes / Cancel" dialog blocks the
+# editor's main thread, which makes EditorBridge/MCP calls (open_prefab, modify_component, …) time
+# out while a health check still passes. Edits made through the MCP tools land on the asset on disk
+# (the open prefab stage is a stale copy), so DISCARD is the safe resolution — Save would overwrite
+# disk with the stale stage and lose work. This script never clicks Save.
+#
+# Usage: unity-dismiss-modal [button]   (default: "Discard Changes")
+# Exit:  0 = clicked or nothing to dismiss; 1 = error (e.g. missing Accessibility permission).
+
+readonly button="${1:-Discard Changes}"
+
+result="$(osascript - "$button" 2>&1 <<'APPLESCRIPT'
+on run argv
+  set targetButton to item 1 of argv
+  tell application "System Events"
+    if not (exists process "Unity") then return "no-unity"
+    tell process "Unity"
+      repeat with w in windows
+        -- The dialog is usually an attached sheet, but can be a standalone window.
+        try
+          if (exists button targetButton of sheet 1 of w) then
+            click button targetButton of sheet 1 of w
+            return "clicked"
+          end if
+        end try
+        try
+          if (exists button targetButton of w) then
+            click button targetButton of w
+            return "clicked"
+          end if
+        end try
+      end repeat
+      return "no-modal"
+    end tell
+  end tell
+end run
+APPLESCRIPT
+)" || {
+  echo >&2 "unity-dismiss-modal: osascript failed. Grant Accessibility permission to the terminal (System Settings → Privacy & Security → Accessibility). Detail: ${result}"
+  exit 1
+}
+
+case "$result" in
+  clicked)  echo "Dismissed Unity modal — clicked '${button}'." ;;
+  no-modal) echo "No blocking Unity modal found." ;;
+  no-unity) echo "Unity is not running." ;;
+  *)        echo >&2 "unity-dismiss-modal: unexpected result: ${result}"; exit 1 ;;
+esac
