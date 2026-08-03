@@ -156,6 +156,97 @@ def is_update_notice(item: dict) -> bool:
     )
 
 
+def classify_disk_usage(used_bytes: int, avail_bytes: int,
+                        warn_pct: float, crit_pct: float) -> tuple[str, float]:
+    """Classify disk fullness the way `df` does and return (level, used_pct).
+
+    `level` is 'ok' | 'warn' | 'critical'. The percentage is computed over
+    *usable* space — used / (used + available-to-unprivileged) — not the raw
+    device total. This deliberately mirrors df's Use%: the root-reserved
+    blocks (~5% on ext4) are excluded, so the number matches both what df
+    shows and the point at which the container apps (which run unprivileged)
+    start failing. That reserved margin is exactly why the disk read 100% in
+    df while `statvfs` still showed free blocks during the outage this guards
+    against. Thresholds are percentages; crit takes precedence over warn.
+    """
+    usable = used_bytes + avail_bytes
+    if usable <= 0:
+        return ('ok', 0.0)
+    used_pct = 100.0 * used_bytes / usable
+    if used_pct >= crit_pct:
+        return ('critical', used_pct)
+    if used_pct >= warn_pct:
+        return ('warn', used_pct)
+    return ('ok', used_pct)
+
+
+def orphan_scan_trustworthy(rpc_ok: bool, errored_torrents: int,
+                            disk_used_pct: float,
+                            crit_pct: float = 95.0) -> tuple[bool, list[str]]:
+    """Decide whether the staging-orphan list can be trusted right now, and why
+    not. Returns (trustworthy, reasons).
+
+    The orphan list is on-disk staging *minus* what Transmission reports it's
+    holding. That subtraction is only safe when Transmission's view is complete
+    and current, and three states silently corrupt it:
+      - the RPC failed → the held set is empty → *every* staging entry looks
+        orphaned (the worst case — acting on it wipes the whole staging tree);
+      - the disk is critically full → Transmission can't save resume files and
+        may drop torrents from its list, so live data looks unheld;
+      - torrents are in an error state → their data may be intact on disk but
+        not currently claimed, so it looks orphaned.
+    Deleting on a stale list is exactly how live seeds get destroyed — so the
+    audit refuses to present the list under any of these. Pure, so the gate is
+    unit-tested rather than rediscovered in an outage.
+    """
+    reasons: list[str] = []
+    if not rpc_ok:
+        reasons.append(
+            "Transmission RPC failed — the held-torrent set is empty, so EVERY "
+            "staging entry would be reported as an orphan"
+        )
+    if disk_used_pct >= crit_pct:
+        reasons.append(
+            f"disk is critically full ({disk_used_pct:.0f}% >= {crit_pct:.0f}%) — "
+            "Transmission may have dropped torrents it can't save resume files for"
+        )
+    if errored_torrents > 0:
+        reasons.append(
+            f"{errored_torrents} torrent(s) in error state — their data may be "
+            "intact but unclaimed, so it can look orphaned"
+        )
+    return (not reasons, reasons)
+
+
+_ALERT_RANK = {'ok': 0, 'warn': 1, 'critical': 2}
+
+
+def should_send_alert(prev_level: str, prev_date: str,
+                      cur_level: str, today: str) -> tuple[bool, bool]:
+    """Decide whether to email a disk alert, given the previously-recorded
+    alert state. Returns (send, is_recovery).
+
+    The monitor runs every 4h; emailing on every tick while the disk sits
+    full would train the reader to ignore it, so this rate-limits:
+      - alert immediately when severity rises (ok→warn, warn→critical),
+      - otherwise at most one reminder per day while it stays bad,
+      - one recovery notice when it returns to ok after having alerted.
+    Pure so the (fiddly) transition logic is unit-tested rather than
+    discovered in production. Dates are compared as opaque strings — any
+    stable YYYY-MM-DD form works; only equality matters.
+    """
+    prev_rank = _ALERT_RANK.get(prev_level, 0)
+    cur_rank = _ALERT_RANK.get(cur_level, 0)
+    if cur_rank == 0:
+        # Recovered — notify once, only if we had previously alerted.
+        return (prev_rank > 0, True)
+    if cur_rank > prev_rank:
+        return (True, False)
+    if prev_date != today:
+        return (True, False)
+    return (False, False)
+
+
 def parse_bazarr_config(text: str) -> dict:
     """Extract the handful of Bazarr `config.yaml` fields the monitor asserts,
     without a pyyaml dependency (the cron + test envs stay dependency-free).

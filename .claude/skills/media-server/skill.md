@@ -58,7 +58,14 @@ ssh reset@192.168.1.28 "docker exec caddy caddy reload --config /etc/caddy/Caddy
 
 ### Updating a pinned image
 
-Images are version-pinned (see stack overview). To update one deliberately:
+**Prefer the `/update-media-containers` skill** — it wraps `container-images.py` (deployed to `/opt/arr/`), which queries each service's registry for the newest tag *inside the current major*, then applies a chosen one with backup → validate → pull → up → verify:
+```bash
+ssh reset.dev "python3 /opt/arr/container-images.py check"                       # what's out of date (read-only)
+ssh reset.dev "python3 /opt/arr/container-images.py apply sonarr <tag> --dry-run" # preview
+ssh reset.dev "python3 /opt/arr/container-images.py apply sonarr <tag>"           # backup+pull+up+verify
+```
+
+The equivalent by hand (what the tool automates), if you need to do it manually:
 ```bash
 # 1. Find the current running version to know what you're moving from
 ssh reset@192.168.1.28 'docker inspect sonarr --format "{{index .Config.Labels \"org.opencontainers.image.version\"}}"'
@@ -121,6 +128,13 @@ curl -s -X PATCH http://192.168.1.28:8080/api/config \
   -d '{"config":{"dns":{"hosts":["192.168.1.28 sonarr.home","192.168.1.28 radarr.home",...]}}}'
 ```
 
+**New public (`*.reset.dev`) hostname not resolving on the LAN even after the tunnel route + DNS exist?** Pi-hole likely **negative-cached the NXDOMAIN** from a lookup made before the record existed, and serves that stale "doesn't exist" to the whole house. Flush FTL's cache (SIGHUP — no full restart, minimal blip; note `pihole restartdns` just prints usage on v6):
+```bash
+ssh reset@192.168.1.28 "docker exec pihole bash -c 'kill -HUP \$(pidof pihole-FTL)'"
+dig +short <name>.reset.dev @192.168.1.28   # should now return 172.67.x / 104.21.x
+```
+Then clients clear their own caches: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`, and Chromium browsers `brave://net-internals/#dns` → Clear host cache.
+
 To add a new reverse proxy entry, append to `/opt/arr/caddy/Caddyfile`:
 ```
 http://newservice.home {
@@ -133,10 +147,13 @@ Then reload: `docker exec caddy caddy reload --config /etc/caddy/Caddyfile`
 
 The `cloudflared` container runs a token-managed tunnel named **`stormbreaker-server`** under the personal Cloudflare account (Jamie's vialstudios.com login, account ID `0e966f88c17f8eba2d5c984b24f18663`, zone `reset.dev`). Because it's token-managed, **routes live in the Cloudflare Zero Trust dashboard, not in any local config file** — there's no `cloudflared` config.yml on the box to edit.
 
-Current routes:
-- `reset.dev`, `www.reset.dev` → website
-- `watch.reset.dev` → Jellyfin (`http://localhost:8096`)
+Current routes (all HTTP routes point at **Caddy on `http://localhost:80`**, which fans out by Host — so adding/changing a public site is usually a Caddyfile edit, not a dashboard trip):
+- `reset.dev`, `www.reset.dev` → **Caddy** → the public **friends homepage** (static, served from `/opt/arr/www/public/index.html`). *Was Seerr (`localhost:5055`) until 2026-07; the `reset.dev` homepage replaced it and Seerr moved to `get.reset.dev`. Seerr's `applicationTitle` is also `reset.dev`, matching the homepage.*
+- `get.reset.dev` → **Caddy** → Seerr (`localhost:5055`). Public request frontend for friends. (LAN alias `overseerr.home` still works.)
+- `watch.reset.dev` → Jellyfin (`http://localhost:8096`, direct — not via Caddy)
 - `ssh.reset.dev` → sshd (`ssh://localhost:22`)
+
+**Public friends homepage** (`reset.dev`): a self-contained static page (Watch → `watch.reset.dev`, Request → `get.reset.dev`, contact `jamie@vialstudios.com`). Lives at `/opt/arr/www/public/index.html` on the server and is backed up in this skill at `www/index.html` (server web content isn't in the compose file, so it must be restored by hand on a rebuild). Caddy vhosts for `reset.dev`/`www.reset.dev` (file_server) and `get.reset.dev` (reverse_proxy `:5055`) are in the Caddyfile. To edit the page: change `www/index.html` here, `scp` it to `/opt/arr/www/public/index.html`, done (no restart — file_server reads live).
 
 To add a new route:
 1. Cloudflare dashboard → **Zero Trust → Networks → Tunnels → stormbreaker-server**
@@ -156,10 +173,10 @@ Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed 
 
 | Path on server | Purpose | Triggered by |
 |----------------|---------|--------------|
-| `/opt/arr/disk-audit.py` | Honest disk accounting (hardlink-aware) + `--seed-status` per-torrent verdict | Manual |
+| `/opt/arr/disk-audit.py` | Honest disk accounting (hardlink-aware) + `--seed-status` per-torrent verdict. **Suppresses the orphan list when Transmission's view is unreliable** (RPC failed / disk critically full / torrents erroring) — see the "orphan cleanup while degraded" lesson | Manual |
 | `/opt/arr/bulk-add.py` | Parse scene-named folders and bulk-add to Radarr/Sonarr | Manual |
 | `/opt/arr/fix-seeding.py` | Restore hardlinks for files Sonarr/Radarr moved instead of hardlinked | Manual when seeding shows error |
-| `/opt/arr/monitor.py` | Health check for Sonarr/Radarr/Prowlarr + Bazarr + Transmission, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
+| `/opt/arr/monitor.py` | Health check for Sonarr/Radarr/Prowlarr + Bazarr + Transmission **+ disk fullness (warn 90% / crit 95%), which emails an alert via Resend**, runs every 4h via `/etc/cron.d/arr-monitor` | Cron |
 
 **Sync local edits to the server**: run `~/.claude/skills/media-server/scripts/deploy`. It runs all local tests, tars the `.py` files (excluding `*_test.py`) over ssh to `reset.dev`, places them in `/opt/arr/` with `+x`, and runs `monitor.py` on the box as a post-deploy verification. Fails closed if any test fails.
 
@@ -168,6 +185,10 @@ Operational scripts live on the server at `/opt/arr/*.py` and are *also* backed 
 - The **Sonarr/Radarr → Jellyfin "Emby / Jellyfin" Connect notifications** — these live in each app's database, not in any tracked config, so a rebuilt Sonarr/Radarr loses them and silently reverts to Jellyfin's racy real-time-only scanning (see the "Batch season imports" lesson). Recreate both via `POST /api/v3/notification` (`implementation: MediaBrowser`, `updateLibrary: true`, host `192.168.1.28:8096`, Jellyfin API key). `monitor.py` asserts their presence so a missing one surfaces as a health issue.
 
 `monitor.py` also checks **Bazarr** — liveness via `/api/system/status` plus a wiring assertion (`use_sonarr`/`use_radarr` on, and Sonarr/Radarr IPs not left at `127.0.0.1`), since a rebuilt `/opt/arr/bazarr` silently un-wires the bridge-networked container. And because images are pinned, it **demotes the benign "New update is available" *arr warning to info** (via `arrlib.is_update_notice`) so the cron doesn't report ISSUES every tick — real warnings/errors still alert. The pure helpers (`parse_bazarr_config`, `is_update_notice`) live in `arrlib.py` with tests in `arrlib_test.py`; `monitor.py` itself runs its checks at import time so it isn't unit-tested directly.
+
+**Disk fullness + email alerts.** `monitor.py` checks root-filesystem usage each run (`classify_disk_usage` in `arrlib.py`, df-style % over usable space) and, on **warn (≥90%)** or **critical (≥95%)**, emails via the **Resend SMTP relay** (`smtp.resend.com:465`, from `noreply@reset.dev`, to `jamie@vialstudios.com` by default). This is the failure that cascades hardest here — a full disk 503s Radarr/Sonarr adds (Seerr requests fail), wedges Transmission ("No space left on device"), and stalls Jellyfin imports — and it was previously invisible until a request failed. The Resend key is **read live from Seerr's `settings.json`** (never stored in the treated-as-public script); env overrides exist (`RESEND_API_KEY`, `ALERT_EMAIL_TO`, `DISK_WARN_PCT`, `DISK_CRIT_PCT`). Alerts are **rate-limited** by a state file (`/opt/arr/.monitor-disk-alert.json`) via `arrlib.should_send_alert`: fire on worsening, at most one nag/day while bad, one recovery notice — so a chronically-full disk doesn't spam every 4h. Thresholds/rate-limit logic are pure + tested in `arrlib_test.py`. Note: alerting doesn't *fix* a full disk — if the baseline runs hot (this box lives at ~93–98%), you'll alert constantly until retention or a bigger drive brings the baseline down.
+
+**`deploy --quiet` exits 1 even on success** — its final `say "  done"` returns 1 when quiet (the `[[ "$QUIET" == 0 ]] &&` short-circuits) and that's the script's last command. The sync still happens; just don't trust the exit code in quiet mode. Prefer plain `./deploy` (exits 0, and its post-deploy `monitor.py` run is a live smoke test).
 
 **Credentials**: the tracked copies of `fix-seeding.py` and `monitor.py` read the Transmission password from `$TRANSMISSION_PASS` (sanitized for the public-treat-as dotfiles repo). On the server, this needs to be set:
 - For the cron entry: `TRANSMISSION_PASS=...` in `/etc/cron.d/arr-monitor` (one line above the schedule)
@@ -258,6 +279,11 @@ def rpc(method, args=None):
 ```
 
 ## Hard-won lessons
+
+### Never run orphan/staging cleanup while Transmission is degraded
+The "orphan" list (`disk-audit.py`, or any ad-hoc `torrent-get` held-set subtraction) is **on-disk staging minus what Transmission reports holding**. That subtraction is only safe when Transmission's view is complete. When the disk is full, Transmission can't save resume files and **drops torrents from its list** — so live, actively-seeding data looks unheld and gets flagged as an orphan. Deleting on that stale list wipes the staging hardlinks those torrents seed from. Symptom afterward: dozens of torrents flip to **"Paused torrent as no data was found"** even though the media is fine in the library (the `.mkv` is hardlinked there; only the staging copy + sidecar `.nfo`/sample are gone, and sidecars can't be relinked, so seeding can't be restored — the torrents are dead and must be removed). This happened once, during a full-disk remediation: ~90 torrents lost their seed (no media lost). Guardrails now in place:
+- `disk-audit.py` **suppresses the orphan list entirely** (loud DANGER banner) when the RPC failed, the disk is ≥95% full, or any torrent is in error state (`arrlib.orphan_scan_trustworthy`, tested). Fix those conditions first, then re-run.
+- Rule of thumb: **free space and clear errored torrents (`monitor.py` / stop→verify→start) before ever deleting from staging.** If `fix-seeding.py --dry-run` shows "would link", the media survives in the library and seeding is recoverable; if it can't relink (missing sidecars), the torrent is unrecoverable — remove it with `torrent-remove` (`delete-local-data: False`, since the media hardlink lives in the library).
 
 ### Hardlink vs move — the seeding trap
 `copyUsingHardlinks: true` is set in both Sonarr and Radarr, but **`importMode: 'auto'` in ManualImport API calls does a move on same-filesystem**, not a hardlink. Always use `importMode: 'copy'` in ManualImport API payloads — this respects `copyUsingHardlinks` and leaves the original torrent files intact for seeding.
@@ -920,3 +946,31 @@ rpc('torrent-start', {'ids': errored_ids})
 ```
 
 Note: Transmission RPC has `rpc-authentication-required: false` — no credentials needed.
+
+## jfa-go (self-service accounts & password reset)
+
+`http://account.home` / `http://192.168.1.28:8056`, public at `https://account.reset.dev`. Added 2026-07 so friends can reset their own Jellyfin passwords remotely (Jellyfin's built-in reset only works on the LAN, and Seerr can't reset a Jellyfin-backed password — so resets were admin-only before this). Also does email-invite onboarding.
+
+Compose service (pinned by digest — jfa-go publishes no semver tags, only `latest`/`unstable`; `latest` == v0.6.0 as of 2025-11-27):
+```yaml
+  jfa-go:
+    image: hrfee/jfa-go@sha256:701cfca823f9278b65f4cf7706b0c7f89b3be33e17ca077f11d89dc119e9f307
+    container_name: jfa-go
+    ports: ["8056:8056"]
+    volumes:
+      - /opt/arr/jfa-go:/data
+      - /opt/arr/jellyfin/data:/jf      # NOT /opt/arr/jellyfin — see gotcha
+      - /etc/localtime:/etc/localtime:ro
+    environment: [TZ=America/Los_Angeles]
+    restart: unless-stopped
+```
+
+**`/jf` gotcha:** jfa-go watches `/jf` for Jellyfin's `passwordreset*.json` files. This Jellyfin (linuxserver, `/opt/arr/jellyfin:/config`) writes those to its **data** dir — `/opt/arr/jellyfin/data/passwordreset<guid>.json` — not the config root. So `/jf` must mount `/opt/arr/jellyfin/data`, or resets silently never send. Verified by creating a throwaway user + `POST /Users/ForgotPassword` and finding where the file lands.
+
+**Caddy** (routes through Caddy like the other public names): `http://account.reset.dev, http://account.home { reverse_proxy localhost:8056 }`. Pi-hole `account.home` → `192.168.1.28` added.
+
+**Cloudflare tunnel:** `account.reset.dev` → `http://localhost:80` (Caddy) must be added in the Zero Trust dashboard (token-managed tunnel — no local config).
+
+**First-run is a web wizard** (not scriptable) at `http://192.168.1.28:8056`: Jellyfin URL `http://192.168.1.28:8096` + admin (`reset`) login; SMTP reuse Resend (`smtp.resend.com:465` SSL, user `resend`, pass = the Resend key in Seerr's Email settings, from `noreply@reset.dev`); password-reset path `/jf`; external URL `https://account.reset.dev`. Existing users need their email set in jfa-go's Accounts tab before reset works (emails are in Seerr).
+
+**Post-wizard gotcha (silent):** the wizard sets `[ui] jfa_url` correctly but leaves `[password_resets] url_base` (and a second copy) at the example default `http://accounts.jellyf.in:8056`, which can end up in the emailed reset link. Fix in `config.ini` (aligned spacing → use a regex): stop jfa-go, `sed -i -E 's|(url_base[[:space:]]*=[[:space:]]*)http://accounts\.jellyf\.in:8056|\1https://account.reset.dev|g'`, start. `config.ini` also has a top-level `first_run=false` before any `[section]` (breaks configparser unless you prepend a dummy header) and uses `%d/%m/%y` (breaks `%`-interpolation unless `interpolation=None`). The public landing page (`/opt/arr/www/public/index.html`) has an **Account** card → `account.reset.dev` for self-service resets.

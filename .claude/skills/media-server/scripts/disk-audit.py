@@ -30,7 +30,7 @@ import urllib.request
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import normalize, parse_title_year, to_host_path  # noqa: E402
+from arrlib import normalize, parse_title_year, to_host_path, orphan_scan_trustworthy  # noqa: E402
 
 DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CATEGORIES = ['movies', 'tv-shows', 'radarr', 'tv-sonarr']
@@ -321,36 +321,65 @@ def main() -> None:
     # Orphans in staging
     print()
     print('=== Orphans in staging (not held by any active Transmission torrent) ===')
+    rpc_ok = True
+    errored_torrents = 0
+    held_names_per_dir: dict[str, set[str]] = defaultdict(set)
     try:
-        torrents = trans_rpc('torrent-get', {'fields': ['name', 'downloadDir']})['torrents']
-        held = {os.path.join(t['downloadDir'], t['name']) for t in torrents}
-        held_names_per_dir: dict[str, set[str]] = defaultdict(set)
+        torrents = trans_rpc('torrent-get', {'fields': ['name', 'downloadDir', 'error']})['torrents']
         for t in torrents:
             held_names_per_dir[t['downloadDir']].add(t['name'])
+            if t.get('error', 0) != 0:
+                errored_torrents += 1
     except Exception as e:
+        rpc_ok = False
         print(f'  could not reach Transmission: {e}')
-        held = set()
-        held_names_per_dir = {}
 
-    orphan_total_unique = 0
-    for cat in ('radarr', 'tv-sonarr'):
-        cat_path = os.path.join(DOWNLOADS, cat)
-        if not os.path.isdir(cat_path):
-            continue
-        for entry in sorted(os.listdir(cat_path)):
-            full = os.path.join(cat_path, entry)
-            if entry in held_names_per_dir.get(cat_path, set()):
+    # Current disk fullness, computed df-style (over usable space).
+    try:
+        st = os.statvfs(DOWNLOADS)
+        used_blocks = st.f_blocks - st.f_bfree
+        usable_blocks = used_blocks + st.f_bavail
+        disk_pct = 100.0 * used_blocks / usable_blocks if usable_blocks else 0.0
+    except Exception:
+        disk_pct = 0.0
+
+    # Guard: the orphan list is on-disk staging minus Transmission's held set —
+    # only meaningful when Transmission's view is complete. A failed RPC, a full
+    # disk, or errored torrents make live data look orphaned; deleting on that
+    # stale list is how live seeds get wiped (this tool once helped do exactly
+    # that). Suppress the list entirely under those conditions — a stale list is
+    # worse than none.
+    trustworthy, reasons = orphan_scan_trustworthy(rpc_ok, errored_torrents, disk_pct)
+    if not trustworthy:
+        bar = '!' * 70
+        print()
+        print(f'  {bar}')
+        print('  DANGER: orphan list SUPPRESSED — it is unreliable right now and must')
+        print('  NOT be used to delete anything:')
+        for r in reasons:
+            print(f'    - {r}')
+        print('  Fix the above (free disk, clear/verify errored torrents), then re-run.')
+        print(f'  {bar}')
+    else:
+        orphan_total_unique = 0
+        for cat in ('radarr', 'tv-sonarr'):
+            cat_path = os.path.join(DOWNLOADS, cat)
+            if not os.path.isdir(cat_path):
                 continue
-            # Compute unique-to-this-folder bytes
-            unique_bytes = 0
-            for ino, size, p in walk_inodes(full):
-                # Unique if every other hardlink for this inode is also inside `full`
-                other_paths = [pp for pp in paths_per_inode[ino] if pp != p]
-                if all(pp.startswith(full + '/') for pp in other_paths):
-                    unique_bytes += size
-            orphan_total_unique += unique_bytes
-            print(f'  {cat:<10}  {gb(unique_bytes):>6.2f}G unique  {entry[:80]}')
-    print(f'\n  Total orphan reclaim: {gb(orphan_total_unique):.1f}G')
+            for entry in sorted(os.listdir(cat_path)):
+                full = os.path.join(cat_path, entry)
+                if entry in held_names_per_dir.get(cat_path, set()):
+                    continue
+                # Compute unique-to-this-folder bytes
+                unique_bytes = 0
+                for ino, size, p in walk_inodes(full):
+                    # Unique if every other hardlink for this inode is also inside `full`
+                    other_paths = [pp for pp in paths_per_inode[ino] if pp != p]
+                    if all(pp.startswith(full + '/') for pp in other_paths):
+                        unique_bytes += size
+                orphan_total_unique += unique_bytes
+                print(f'  {cat:<10}  {gb(unique_bytes):>6.2f}G unique  {entry[:80]}')
+        print(f'\n  Total orphan reclaim: {gb(orphan_total_unique):.1f}G')
 
     # Build inode -> torrent map so we can attribute each library file
     # to its seeding torrent (if any) and surface ratio/verdict alongside size.

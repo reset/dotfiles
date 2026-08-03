@@ -159,6 +159,132 @@ class TestIsUpdateNotice(unittest.TestCase):
         self.assertFalse(arrlib.is_update_notice({}))
 
 
+class TestClassifyDiskUsage(unittest.TestCase):
+    """classify_disk_usage mirrors df's Use% (over usable space, excluding
+    root-reserved blocks) and buckets it into ok/warn/critical."""
+
+    def test_ok_below_warn(self):
+        # 50% used → ok.
+        level, pct = arrlib.classify_disk_usage(50, 50, 85, 93)
+        self.assertEqual(level, 'ok')
+        self.assertAlmostEqual(pct, 50.0)
+
+    def test_warn_at_threshold(self):
+        # Exactly at the warn threshold is a warn (>=).
+        level, _ = arrlib.classify_disk_usage(85, 15, 85, 93)
+        self.assertEqual(level, 'warn')
+
+    def test_warn_band(self):
+        level, _ = arrlib.classify_disk_usage(90, 10, 85, 93)
+        self.assertEqual(level, 'warn')
+
+    def test_critical_at_threshold(self):
+        level, _ = arrlib.classify_disk_usage(93, 7, 85, 93)
+        self.assertEqual(level, 'critical')
+
+    def test_critical_takes_precedence(self):
+        # 96% is over both thresholds — must classify as the more severe one.
+        level, pct = arrlib.classify_disk_usage(96, 4, 85, 93)
+        self.assertEqual(level, 'critical')
+        self.assertAlmostEqual(pct, 96.0)
+
+    def test_uses_usable_not_raw_total(self):
+        # avail is what's usable by unprivileged callers; reserved blocks that
+        # neither `used` nor `avail` count must not dilute the percentage.
+        # 800 used, 40 avail → 800/840 = 95.2%, critical — even though a raw
+        # 916-total device would read ~87%.
+        level, pct = arrlib.classify_disk_usage(800, 40, 85, 93)
+        self.assertEqual(level, 'critical')
+        self.assertAlmostEqual(pct, 95.238, places=2)
+
+    def test_zero_usable_is_ok_not_crash(self):
+        level, pct = arrlib.classify_disk_usage(0, 0, 85, 93)
+        self.assertEqual(level, 'ok')
+        self.assertEqual(pct, 0.0)
+
+
+class TestShouldSendAlert(unittest.TestCase):
+    """should_send_alert rate-limits disk emails: fire on worsening, at most
+    one nag/day while bad, one recovery notice on return to ok."""
+
+    def test_first_time_warn_fires(self):
+        # No prior state (prev 'ok') → crossing into warn alerts.
+        send, recovery = arrlib.should_send_alert('ok', '', 'warn', '2026-08-02')
+        self.assertTrue(send)
+        self.assertFalse(recovery)
+
+    def test_worsening_same_day_fires(self):
+        # Already alerted warn today; escalating to critical must re-alert.
+        send, recovery = arrlib.should_send_alert('warn', '2026-08-02', 'critical', '2026-08-02')
+        self.assertTrue(send)
+        self.assertFalse(recovery)
+
+    def test_same_level_same_day_suppressed(self):
+        # Still critical, already nagged today → stay quiet.
+        send, _ = arrlib.should_send_alert('critical', '2026-08-02', 'critical', '2026-08-02')
+        self.assertFalse(send)
+
+    def test_same_level_new_day_nags_once(self):
+        # Still critical but a new day → one reminder.
+        send, recovery = arrlib.should_send_alert('critical', '2026-08-02', 'critical', '2026-08-03')
+        self.assertTrue(send)
+        self.assertFalse(recovery)
+
+    def test_recovery_after_alert_notifies_once(self):
+        send, recovery = arrlib.should_send_alert('critical', '2026-08-02', 'ok', '2026-08-03')
+        self.assertTrue(send)
+        self.assertTrue(recovery)
+
+    def test_ok_to_ok_stays_silent(self):
+        # Never alerted, still fine → no recovery spam.
+        send, recovery = arrlib.should_send_alert('ok', '2026-08-02', 'ok', '2026-08-02')
+        self.assertFalse(send)
+        self.assertTrue(recovery)  # flag set, but send is what gates the email
+
+    def test_improving_but_still_bad_does_not_renag_same_day(self):
+        # critical → warn same day: severity dropped, already alerted today,
+        # so no new email (the situation is already known and improving).
+        send, _ = arrlib.should_send_alert('critical', '2026-08-02', 'warn', '2026-08-02')
+        self.assertFalse(send)
+
+
+class TestOrphanScanTrustworthy(unittest.TestCase):
+    """orphan_scan_trustworthy gates the audit's orphan list on Transmission's
+    view being complete — the exact guard whose absence let a full-disk cleanup
+    delete live seeds."""
+
+    def test_healthy_state_is_trustworthy(self):
+        ok, reasons = arrlib.orphan_scan_trustworthy(True, 0, 80.0)
+        self.assertTrue(ok)
+        self.assertEqual(reasons, [])
+
+    def test_rpc_failure_is_untrustworthy(self):
+        # The dangerous case: no held set → everything looks orphaned.
+        ok, reasons = arrlib.orphan_scan_trustworthy(False, 0, 50.0)
+        self.assertFalse(ok)
+        self.assertTrue(any("RPC failed" in r for r in reasons))
+
+    def test_critical_disk_is_untrustworthy(self):
+        ok, reasons = arrlib.orphan_scan_trustworthy(True, 0, 96.0)
+        self.assertFalse(ok)
+        self.assertTrue(any("critically full" in r for r in reasons))
+
+    def test_errored_torrents_untrustworthy(self):
+        ok, reasons = arrlib.orphan_scan_trustworthy(True, 5, 70.0)
+        self.assertFalse(ok)
+        self.assertTrue(any("error state" in r for r in reasons))
+
+    def test_multiple_reasons_accumulate(self):
+        ok, reasons = arrlib.orphan_scan_trustworthy(False, 3, 99.0)
+        self.assertFalse(ok)
+        self.assertEqual(len(reasons), 3)
+
+    def test_disk_threshold_boundary(self):
+        # Just under the crit threshold with everything else healthy → trusted.
+        ok, _ = arrlib.orphan_scan_trustworthy(True, 0, 94.9, crit_pct=95.0)
+        self.assertTrue(ok)
+
+
 class TestParseBazarrConfig(unittest.TestCase):
     """parse_bazarr_config reads a few fields from Bazarr's config.yaml without
     pyyaml. The tricky bits: `apikey` recurs in provider blocks (must not shadow

@@ -8,20 +8,38 @@ Logs to /opt/arr/monitor.log (append).
 import sys
 import json
 import re
+import smtplib
 import urllib.request
 import urllib.error
 import os
 import random
 from datetime import datetime
+from email.message import EmailMessage
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import make_trans_rpc, to_host_path, parse_bazarr_config, is_update_notice  # noqa: E402
+from arrlib import (  # noqa: E402
+    make_trans_rpc, to_host_path, parse_bazarr_config, is_update_notice,
+    classify_disk_usage, should_send_alert,
+)
 
 QUIET = "--quiet" in sys.argv
 LOG_FILE = "/opt/arr/monitor.log"
 
 # Only spot-check video files; .nfo / .png / sample artifacts are noise.
 VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts')
+
+# Disk-fullness alerting. A full root filesystem is the failure that cascades
+# hardest on this box — it 503s Radarr/Sonarr adds (Seerr requests fail),
+# wedges Transmission with "No space left on device", and stalls Jellyfin
+# imports — yet none of it surfaces until a request fails. Thresholds are
+# percent-of-usable (df's Use%); env-overridable so they can track the
+# library's growth without a redeploy.
+DISK_MOUNT = os.environ.get("DISK_MOUNT", "/")
+DISK_WARN_PCT = float(os.environ.get("DISK_WARN_PCT", "90"))
+DISK_CRIT_PCT = float(os.environ.get("DISK_CRIT_PCT", "95"))
+# Last-alert state (level + date) so we email on worsening, nag at most once
+# a day while bad, and send one recovery note — instead of every 4h tick.
+ALERT_STATE_FILE = os.environ.get("ALERT_STATE_FILE", "/opt/arr/.monitor-disk-alert.json")
 
 issues = []
 ok_msgs = []
@@ -131,6 +149,90 @@ def bazarr_check(name, base_url, config_path):
     else:
         ok_msgs.append(f"{name}: healthy, wired to Sonarr+Radarr")
 
+def check_disk():
+    """Disk-fullness check. Appends a warn/critical issue (or an ok note) and
+    returns (level, used_pct) so the caller can drive the email alert. Uses
+    statvfs directly and classify_disk_usage to bucket it — see that helper for
+    why the percentage is over usable space, not the raw device total."""
+    try:
+        st = os.statvfs(DISK_MOUNT)
+    except Exception as e:
+        issues.append(f"Disk {DISK_MOUNT}: could not stat — {e}")
+        return ("ok", 0.0)
+    used_bytes = (st.f_blocks - st.f_bfree) * st.f_frsize
+    avail_bytes = st.f_bavail * st.f_frsize
+    level, pct = classify_disk_usage(used_bytes, avail_bytes, DISK_WARN_PCT, DISK_CRIT_PCT)
+    free_gb = avail_bytes / 1024 ** 3
+    line = f"Disk {DISK_MOUNT}: {pct:.1f}% used, {free_gb:.0f}G free"
+    if level == "ok":
+        ok_msgs.append(line)
+    else:
+        issues.append(f"[{level.upper()}] {line} (warn>={DISK_WARN_PCT:.0f}% crit>={DISK_CRIT_PCT:.0f}%)")
+    return (level, pct)
+
+
+def get_resend_key():
+    """Resolve the Resend SMTP key without duplicating the secret. It already
+    lives in Seerr's settings, and the cron runs this as root, so read it there
+    (the same "read keys live from config, never hardcode" rule the skill uses
+    for the *arr/Jellyfin keys). Env RESEND_API_KEY overrides for manual/test
+    runs. Returns '' if neither is available, so the caller skips mail rather
+    than crashing (e.g. a non-root manual run that can't read settings.json)."""
+    env = os.environ.get("RESEND_API_KEY", "")
+    if env:
+        return env
+    try:
+        with open("/opt/arr/overseerr/settings.json") as f:
+            d = json.load(f)
+        return d["notifications"]["agents"]["email"]["options"].get("authPass", "")
+    except Exception:
+        return ""
+
+
+def send_email(subject, body):
+    """Send an alert through the Resend SMTP relay (the same relay Seerr and
+    jfa-go use). The key is resolved live via get_resend_key() — never stored in
+    this file, which is treated as public (see the skill). Best-effort: the
+    caller catches failures so a mail hiccup can't mask the health result."""
+    host = os.environ.get("SMTP_HOST", "smtp.resend.com")
+    port = int(os.environ.get("SMTP_PORT", "465"))
+    user = os.environ.get("SMTP_USER", "resend")
+    password = get_resend_key()
+    sender = os.environ.get("ALERT_EMAIL_FROM", "noreply@reset.dev")
+    recipient = os.environ.get("ALERT_EMAIL_TO", "jamie@vialstudios.com")
+    if not password:
+        raise RuntimeError("Resend key unavailable (not in env or Seerr settings)")
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = f"media-server <{sender}>"
+    msg["To"] = recipient
+    msg.set_content(body)
+    with smtplib.SMTP_SSL(host, port, timeout=20) as s:
+        s.login(user, password)
+        s.send_message(msg)
+
+
+def read_alert_state():
+    try:
+        with open(ALERT_STATE_FILE) as f:
+            d = json.load(f)
+        return d.get("level", "ok"), d.get("date", "")
+    except Exception:
+        return "ok", ""
+
+
+def write_alert_state(level, date):
+    try:
+        with open(ALERT_STATE_FILE, "w") as f:
+            json.dump({"level": level, "date": date}, f)
+    except Exception as e:
+        log(f"Warning: could not write {ALERT_STATE_FILE}: {e}")
+
+
+# Check disk first — it's the highest-consequence failure and gates the email
+# alert built after the report below.
+disk_level, disk_pct = check_disk()
+
 # Check Sonarr
 sonarr_key = get_api_key("/opt/arr/sonarr/config.xml")
 if sonarr_key:
@@ -229,5 +331,24 @@ try:
         f.write(summary + "\n")
 except Exception as e:
     log(f"Warning: could not write to {LOG_FILE}: {e}")
+
+# Disk alert email — rate-limited by should_send_alert (fire on worsening,
+# one nag/day while bad, one recovery note). Gated on disk level specifically;
+# the body carries the full report so the mail is self-contained. Mail failures
+# are non-fatal — they must not change the health exit code.
+today = datetime.now().strftime("%Y-%m-%d")
+prev_level, prev_date = read_alert_state()
+send, is_recovery = should_send_alert(prev_level, prev_date, disk_level, today)
+if send:
+    if is_recovery:
+        subject = f"[media-server] disk recovered — {disk_pct:.0f}% used"
+    else:
+        subject = f"[media-server] disk {disk_level.upper()} — {disk_pct:.0f}% used, {DISK_MOUNT}"
+    try:
+        send_email(subject, summary)
+        log(f"Alert email sent: {subject}")
+    except Exception as e:
+        log(f"Warning: disk alert email failed: {e}")
+write_alert_state(disk_level, today)
 
 sys.exit(1 if issues else 0)
