@@ -298,6 +298,12 @@ Remediation (recovers seeding, deletes nothing):
 
 `fix-seeding.py` now chowns any staging dir it creates back to `111:113`, so it won't reintroduce this itself when run as root.
 
+### Torrent IDs are NOT stable across a Transmission restart
+Transmission assigns torrent IDs per session. Recreating the container — a `docker compose up -d transmission` during an image bump, or any restart — **reassigns every id**: the torrent that was id 111 before is a *different* torrent after. Acting on ids captured before a restart hits the wrong torrent. Seen 2026-08: an image update recreated the container, then a `torrent-remove [100,111,137]` built from pre-restart notes removed one intended torrent, one *healthy seeding* torrent that now happened to occupy id 111, and one no-op. `delete-local-data:False` meant no media was lost, but a good seed was stopped and its `.torrent` deleted (so it couldn't be cheaply re-added). Rules:
+- **After any restart, re-resolve every target by `name` or `hashString` — never reuse a prior session's numeric id.** The infohash (`hashString`, returned by `torrent-get`) is the stable key that survives restarts; ids are not.
+- A container **recreate also forces a recheck**, which surfaces *latent* casualties: a torrent whose staging data was already gone shows 100%/no-error until the recheck looks, then flips to `error 3: No data found`. That's the restart *revealing* a pre-existing loss, not causing it.
+- `torrent-remove` with `delete-local-data:False` on an already-imported release leaves its **staging files orphaned** (no torrent references them, and the library copy is a separate inode) — reclaimable via the orphan path once Transmission's view is trustworthy.
+
 ### Hardlink vs move — the seeding trap
 `copyUsingHardlinks: true` is set in both Sonarr and Radarr, but **`importMode: 'auto'` in ManualImport API calls does a move on same-filesystem**, not a hardlink. Always use `importMode: 'copy'` in ManualImport API payloads — this respects `copyUsingHardlinks` and leaves the original torrent files intact for seeding.
 
