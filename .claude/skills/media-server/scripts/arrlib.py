@@ -34,6 +34,15 @@ SCENE_KEYWORDS = (
 HOST_DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CONTAINER_DOWNLOADS = '/downloads'
 
+# Transmission's container user (PUID/PGID in docker-compose.yml). Any staging
+# file or directory Transmission must *write* has to be owned by this user; a
+# root-owned staging dir lets it keep seeding files already present but blocks
+# it from re-fetching a missing piece — surfacing as a "Permission denied"
+# torrent error. A cleanup run as root (deleting sidecars, recreating dirs) is
+# the classic way staging ends up root-owned. Fix: chown -R back to these ids.
+TRANSMISSION_UID = 111
+TRANSMISSION_GID = 113
+
 
 def to_host_path(p: str) -> str:
     """Convert a Transmission-reported container path to the host filesystem path."""
@@ -216,6 +225,51 @@ def orphan_scan_trustworthy(rpc_ok: bool, errored_torrents: int,
             "intact but unclaimed, so it can look orphaned"
         )
     return (not reasons, reasons)
+
+
+def choose_relink_source(expected_size: int,
+                         name_candidates: list[tuple[str, int]],
+                         size_candidates: list[str],
+                         size_tol: float = 0.01) -> tuple[str | None, str]:
+    """Pick which library file to hardlink back for a missing torrent video file.
+
+    `fix-seeding.py` restores broken seeding by hardlinking a torrent's missing
+    file from its Sonarr/Radarr library copy. Matching on *filename* alone has a
+    blind spot: when the *arr renamed the file on import (library name !=
+    torrent-member name) the media survives under a new name but a name lookup
+    finds nothing, so the tool reports "not found" and an operator relinks it by
+    hand. This adds an exact-byte-size fallback — the library copy is the same
+    content, so its size equals the torrent member's exactly.
+
+    Inputs are pre-resolved candidate lists so the function stays pure/testable:
+      - name_candidates: ``[(path, size), ...]`` — library files whose basename
+        equals the torrent member's basename
+      - size_candidates: ``[path, ...]`` — library files whose size equals
+        ``expected_size`` exactly (the caller buckets by exact size)
+
+    Decision, safest first:
+      1. a name candidate whose size matches within ``size_tol`` → ``'name+size'``
+      2. exactly one name candidate (trust the name, size unconfirmed) → ``'name'``
+      3. no name candidate but exactly one exact-size candidate — the
+         renamed-on-import case this fixes → ``'size'``
+      4. otherwise refuse to guess → ``'ambiguous'`` (candidates exist) or
+         ``'not-found'`` (none)
+
+    Returns ``(path_or_None, method)``. A wrong guess is non-destructive:
+    Transmission's own hash verify rejects a mismatched file, so nothing is
+    deleted — but we still only take the size fallback when it's *unique*, to
+    avoid a misleading "Linked" in the operator's face.
+    """
+    for path, size in name_candidates:
+        if expected_size and abs(size - expected_size) / max(expected_size, 1) <= size_tol:
+            return (path, 'name+size')
+    if len(name_candidates) == 1:
+        return (name_candidates[0][0], 'name')
+    if not name_candidates and expected_size and len(size_candidates) == 1:
+        return (size_candidates[0], 'size')
+    if name_candidates or size_candidates:
+        return (None, 'ambiguous')
+    return (None, 'not-found')
 
 
 _ALERT_RANK = {'ok': 0, 'warn': 1, 'critical': 2}

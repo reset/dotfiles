@@ -35,11 +35,22 @@ VIDEO_EXTS = ('.mkv', '.mp4', '.avi', '.m4v', '.ts', '.m2ts')
 # percent-of-usable (df's Use%); env-overridable so they can track the
 # library's growth without a redeploy.
 DISK_MOUNT = os.environ.get("DISK_MOUNT", "/")
-DISK_WARN_PCT = float(os.environ.get("DISK_WARN_PCT", "90"))
-DISK_CRIT_PCT = float(os.environ.get("DISK_CRIT_PCT", "95"))
+# This box runs a genuinely hot disk (baseline ~93–98%), so warn was raised
+# from 90→95 to stop near-daily false alarms in the 90–95% band; crit sits at
+# 98 to keep a real escalation step before the disk-full cascade.
+DISK_WARN_PCT = float(os.environ.get("DISK_WARN_PCT", "95"))
+DISK_CRIT_PCT = float(os.environ.get("DISK_CRIT_PCT", "98"))
 # Last-alert state (level + date) so we email on worsening, nag at most once
 # a day while bad, and send one recovery note — instead of every 4h tick.
 ALERT_STATE_FILE = os.environ.get("ALERT_STATE_FILE", "/opt/arr/.monitor-disk-alert.json")
+# Same rate-limited scheme, separate stream, for errored torrents. Before this,
+# errored torrents were detected (exit 1 + logged) but never emailed — only disk
+# fullness was — so the batch that broke 7 torrents' seeding sat unseen in the
+# log for 5 days. Errored torrents map to 'critical' so should_send_alert fires
+# on the first tick that finds any, nags at most once/day, then sends one
+# recovery note when the count returns to zero.
+TORRENT_ALERT_STATE_FILE = os.environ.get(
+    "TORRENT_ALERT_STATE_FILE", "/opt/arr/.monitor-torrent-alert.json")
 
 issues = []
 ok_msgs = []
@@ -212,21 +223,21 @@ def send_email(subject, body):
         s.send_message(msg)
 
 
-def read_alert_state():
+def read_alert_state(path):
     try:
-        with open(ALERT_STATE_FILE) as f:
+        with open(path) as f:
             d = json.load(f)
         return d.get("level", "ok"), d.get("date", "")
     except Exception:
         return "ok", ""
 
 
-def write_alert_state(level, date):
+def write_alert_state(path, level, date):
     try:
-        with open(ALERT_STATE_FILE, "w") as f:
+        with open(path, "w") as f:
             json.dump({"level": level, "date": date}, f)
     except Exception as e:
-        log(f"Warning: could not write {ALERT_STATE_FILE}: {e}")
+        log(f"Warning: could not write {path}: {e}")
 
 
 # Check disk first — it's the highest-consequence failure and gates the email
@@ -271,14 +282,22 @@ if not PASS:
     # misleading "unreachable" issue on top of the real cause.
     issues.append("Transmission: TRANSMISSION_PASS env var not set")
     PASS = None
+# Tracked in outer scope so the torrent-alert email (below the report) knows
+# both the errored count and whether we actually reached Transmission — an
+# unreachable box must NOT be read as "0 errored" (that would fire a bogus
+# recovery email); we only touch the torrent-alert state when reachable.
+errored_count = 0
+transmission_reachable = False
 try:
     if PASS is None:
         raise RuntimeError("skipped: no TRANSMISSION_PASS")
     rpc = make_trans_rpc(URL, USER, PASS)
     result = rpc("torrent-get", {"fields": ["id", "name", "errorString", "downloadDir", "files", "percentDone"]})
     torrents = result.get("torrents", [])
+    transmission_reachable = True
 
     errored = [t for t in torrents if t.get("errorString", "").strip()]
+    errored_count = len(errored)
     if errored:
         for t in errored[:5]:
             issues.append(f"Transmission: torrent '{t['name']}' has error: {t['errorString']}")
@@ -337,7 +356,7 @@ except Exception as e:
 # the body carries the full report so the mail is self-contained. Mail failures
 # are non-fatal — they must not change the health exit code.
 today = datetime.now().strftime("%Y-%m-%d")
-prev_level, prev_date = read_alert_state()
+prev_level, prev_date = read_alert_state(ALERT_STATE_FILE)
 send, is_recovery = should_send_alert(prev_level, prev_date, disk_level, today)
 if send:
     if is_recovery:
@@ -349,6 +368,27 @@ if send:
         log(f"Alert email sent: {subject}")
     except Exception as e:
         log(f"Warning: disk alert email failed: {e}")
-write_alert_state(disk_level, today)
+write_alert_state(ALERT_STATE_FILE, disk_level, today)
+
+# Torrent-error alert — same rate-limited scheme, separate stream. Only when
+# Transmission was reachable: an unreachable box leaves errored_count at 0,
+# which must not be mistaken for "recovered" (that's already an issue via the
+# unreachable path above). Errored torrents = 'critical'; the full report is
+# the body so the mail is self-contained.
+if transmission_reachable:
+    torrent_level = "critical" if errored_count else "ok"
+    prev_t_level, prev_t_date = read_alert_state(TORRENT_ALERT_STATE_FILE)
+    send_t, recovery_t = should_send_alert(prev_t_level, prev_t_date, torrent_level, today)
+    if send_t:
+        if recovery_t:
+            subject = "[media-server] torrents recovered — none errored"
+        else:
+            subject = f"[media-server] {errored_count} torrent(s) errored"
+        try:
+            send_email(subject, summary)
+            log(f"Alert email sent: {subject}")
+        except Exception as e:
+            log(f"Warning: torrent alert email failed: {e}")
+    write_alert_state(TORRENT_ALERT_STATE_FILE, torrent_level, today)
 
 sys.exit(1 if issues else 0)

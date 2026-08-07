@@ -359,5 +359,62 @@ class TestParseBazarrConfig(unittest.TestCase):
         self.assertEqual(arrlib.parse_bazarr_config(''), {})
 
 
+class TestChooseRelinkSource(unittest.TestCase):
+    """choose_relink_source picks the library file to hardlink back for a
+    missing torrent video file. The historically-missed case is (3): a file
+    the *arr renamed on import, invisible to a name lookup but recoverable by
+    exact size. Wrong guesses are non-destructive (verify rejects them), so the
+    only real failure mode is a *misleading* match — hence uniqueness gates."""
+
+    def test_name_plus_exact_size(self):
+        src, method = arrlib.choose_relink_source(
+            1000, [('/lib/a.mkv', 1000)], ['/lib/a.mkv'])
+        self.assertEqual((src, method), ('/lib/a.mkv', 'name+size'))
+
+    def test_name_within_tolerance(self):
+        # 0.5% off — inside the 1% default tolerance.
+        src, method = arrlib.choose_relink_source(
+            1000, [('/lib/a.mkv', 1005)], [])
+        self.assertEqual((src, method), ('/lib/a.mkv', 'name+size'))
+
+    def test_single_name_no_size_confirmation(self):
+        # Only one same-name file, size doesn't match — trust the name anyway.
+        src, method = arrlib.choose_relink_source(
+            1000, [('/lib/a.mkv', 500)], [])
+        self.assertEqual((src, method), ('/lib/a.mkv', 'name'))
+
+    def test_renamed_on_import_unique_size(self):
+        # The blind spot: no name match, exactly one exact-size library file.
+        src, method = arrlib.choose_relink_source(
+            1000, [], ['/lib/RenamedByRadarr.mkv'])
+        self.assertEqual((src, method), ('/lib/RenamedByRadarr.mkv', 'size'))
+
+    def test_size_fallback_requires_uniqueness(self):
+        # Two files share the exact size — refuse to guess.
+        src, method = arrlib.choose_relink_source(
+            1000, [], ['/lib/x.mkv', '/lib/y.mkv'])
+        self.assertEqual((src, method), (None, 'ambiguous'))
+
+    def test_multiple_names_none_size_match(self):
+        src, method = arrlib.choose_relink_source(
+            1000, [('/lib/a.mkv', 10), ('/other/a.mkv', 20)], [])
+        self.assertEqual((src, method), (None, 'ambiguous'))
+
+    def test_nothing_found(self):
+        src, method = arrlib.choose_relink_source(1000, [], [])
+        self.assertEqual((src, method), (None, 'not-found'))
+
+    def test_zero_expected_size_disables_size_fallback(self):
+        # A 0-byte member (e.g. an empty .nfo) must not size-match anything.
+        src, method = arrlib.choose_relink_source(0, [], ['/lib/x.mkv'])
+        self.assertEqual((src, method), (None, 'ambiguous'))
+
+    def test_name_match_preferred_over_size(self):
+        # A confident name+size match wins even when other exact-size files exist.
+        src, method = arrlib.choose_relink_source(
+            1000, [('/lib/a.mkv', 1000)], ['/lib/a.mkv', '/lib/b.mkv'])
+        self.assertEqual((src, method), ('/lib/a.mkv', 'name+size'))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

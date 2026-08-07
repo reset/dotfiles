@@ -30,7 +30,10 @@ import urllib.request
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import normalize, parse_title_year, to_host_path, orphan_scan_trustworthy  # noqa: E402
+from arrlib import (  # noqa: E402
+    normalize, parse_title_year, to_host_path, orphan_scan_trustworthy,
+    TRANSMISSION_UID,
+)
 
 DOWNLOADS = '/var/lib/transmission-daemon/downloads'
 CATEGORIES = ['movies', 'tv-shows', 'radarr', 'tv-sonarr']
@@ -268,6 +271,43 @@ def print_duplicates(paths_per_inode: dict[int, list[str]], inode_size: dict[int
     print(f'\n  Total reclaim if you dedup\'d every group (keep largest in each): {gb(total_extra):.2f}G')
 
 
+def print_owner_anomalies() -> None:
+    """List staging dirs not owned by the transmission user — write-blockers.
+
+    A radarr/tv-sonarr dir owned by root (usually left behind by a cleanup that
+    ran as root) lets Transmission keep seeding the files already present but
+    blocks it from re-fetching a missing piece, which surfaces as a
+    "Permission denied" torrent error. Read-only surfacing only — no alerting,
+    because unpackerr legitimately creates root-owned dirs mid-extraction, so
+    this is a diagnostic aid to eyeball during an investigation, not a monitor
+    signal. Fix a real one with: sudo chown -R 111:113 <dir>.
+    """
+    print()
+    print('=== Staging dirs not owned by the transmission user (write-blockers) ===')
+    found = 0
+    for cat in ('radarr', 'tv-sonarr'):
+        cat_path = os.path.join(DOWNLOADS, cat)
+        if not os.path.isdir(cat_path):
+            continue
+        for entry in sorted(os.listdir(cat_path)):
+            full = os.path.join(cat_path, entry)
+            if not os.path.isdir(full):
+                continue
+            try:
+                uid = os.stat(full).st_uid
+            except OSError:
+                continue
+            if uid != TRANSMISSION_UID:
+                found += 1
+                print(f'  {cat:<10}  uid={uid:<6}  {entry[:80]}')
+    if found:
+        print(f'\n  {found} dir(s) not owned by uid {TRANSMISSION_UID}. If a torrent errored with')
+        print('  "Permission denied", chown it back: sudo chown -R 111:113 <dir>.')
+        print('  (A few may be in-flight unpackerr extractions — those are transient.)')
+    else:
+        print(f'  none — all staging dirs owned by the transmission user (uid {TRANSMISSION_UID}).')
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
     parser.add_argument(
@@ -451,6 +491,9 @@ def main() -> None:
         print(f'  cumulative ratio: {up / down:.2f}')
     except Exception as e:
         print(f'  could not reach Transmission: {e}')
+
+    # Owner anomalies — cheap, read-only, always useful during an incident.
+    print_owner_anomalies()
 
     if args.seed_status:
         print_seed_status(paths_per_inode)

@@ -15,7 +15,10 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from arrlib import make_trans_rpc, to_host_path  # noqa: E402
+from arrlib import (  # noqa: E402
+    make_trans_rpc, to_host_path, choose_relink_source,
+    TRANSMISSION_UID, TRANSMISSION_GID,
+)
 
 DRY_RUN = '--dry-run' in sys.argv
 
@@ -36,14 +39,24 @@ SEARCH_ROOTS = [
 # ── Transmission RPC (handles session token + 409 refresh) ──────────
 rpc = make_trans_rpc(TRANSMISSION_URL, TRANSMISSION_USER, TRANSMISSION_PASS)
 
-# ── Build filename index from managed dirs ───────────────────────────
+# ── Build name + size indexes from managed dirs ──────────────────────
+# Two indexes: by filename (the primary match) and by exact byte size (the
+# fallback for files the *arr renamed on import — same content, new name, so
+# the name lookup misses but the size still matches). See choose_relink_source.
 print('Indexing managed directories...')
-index = {}
+by_name: dict[str, list[tuple[str, int]]] = {}
+by_size: dict[int, list[str]] = {}
 for root in SEARCH_ROOTS:
     for dirpath, dirs, files in os.walk(root):
         for fname in files:
-            index.setdefault(fname.lower(), []).append(os.path.join(dirpath, fname))
-print(f'  {len(index)} unique filenames indexed')
+            p = os.path.join(dirpath, fname)
+            try:
+                sz = os.path.getsize(p)
+            except OSError:
+                continue
+            by_name.setdefault(fname.lower(), []).append((p, sz))
+            by_size.setdefault(sz, []).append(p)
+print(f'  {len(by_name)} unique filenames indexed')
 
 # ── Find missing torrent files ───────────────────────────────────────
 # Only consider completed torrents — an in-progress download has files
@@ -74,43 +87,46 @@ linked = not_found = errors = ambiguous = 0
 restored_torrent_ids: set[int] = set()
 print(f'\n{"DRY RUN — " if DRY_RUN else ""}Repairing...')
 
+renamed = 0
 for torrent_id, torrent_name, orig_path, expected_size, fname in missing:
-    candidates = index.get(fname.lower(), [])
-    if not candidates:
-        not_found += 1
-        print(f'  NOT FOUND: {fname}  (torrent: {torrent_name[:40]})')
+    name_cands = by_name.get(fname.lower(), [])
+    size_cands = by_size.get(expected_size, []) if expected_size else []
+    src, method = choose_relink_source(expected_size, name_cands, size_cands)
+    if src is None:
+        if method == 'ambiguous':
+            ambiguous += 1
+            print(f'  AMBIGUOUS: {fname} — {len(name_cands)} same-name / '
+                  f'{len(size_cands)} same-size candidates, none confident')
+        else:
+            not_found += 1
+            print(f'  NOT FOUND: {fname}  (torrent: {torrent_name[:40]})')
         continue
-    # Pick the candidate whose size matches the expected file size (within 1%
-    # tolerance to allow for filesystem-reported variance). This avoids
-    # accidentally hardlinking a different-quality rip with the same scene
-    # filename — same name, different bytes, would fail Transmission's hash
-    # check anyway, but worse: it would deceive an operator reading "Linked".
-    sized = []
-    for c in candidates:
-        try:
-            sz = os.path.getsize(c)
-        except OSError:
-            continue
-        if expected_size and abs(sz - expected_size) / max(expected_size, 1) <= 0.01:
-            sized.append((sz, c))
-    if sized:
-        src = sized[0][1]
-    elif len(candidates) == 1:
-        src = candidates[0]  # only choice; trust it even without size confirmation
-    else:
-        # Multiple candidates, none size-matching. Don't guess.
-        ambiguous += 1
-        print(f'  AMBIGUOUS: {fname} — {len(candidates)} same-name files, none size-match {expected_size}B')
-        continue
+    # 'size' means we matched a renamed-on-import file purely on byte size —
+    # call it out so the operator can eyeball it (verify is the real backstop).
+    tag = '  [renamed-on-import, matched by size]' if method == 'size' else ''
     orig_dir = os.path.dirname(orig_path)
     if DRY_RUN:
-        print(f'  WOULD LINK: {src}\n          -> {orig_path}')
+        print(f'  WOULD LINK{tag}: {src}\n          -> {orig_path}')
         linked += 1
+        if method == 'size':
+            renamed += 1
         continue
     try:
         os.makedirs(orig_dir, exist_ok=True)
+        # A staging dir we just created is owned by whoever runs this (root, via
+        # cron/sudo). Left root-owned it blocks Transmission's writes — the very
+        # failure this tool exists to repair. Chown it back to the transmission
+        # user when we have the privilege; best-effort otherwise.
+        if os.geteuid() == 0:
+            try:
+                os.chown(orig_dir, TRANSMISSION_UID, TRANSMISSION_GID)
+            except OSError:
+                pass
         os.link(src, orig_path)
         linked += 1
+        if method == 'size':
+            renamed += 1
+            print(f'  LINKED{tag}: {os.path.basename(src)}\n          -> {fname}')
         restored_torrent_ids.add(torrent_id)
     except Exception as e:
         errors += 1
@@ -130,7 +146,7 @@ if restored_torrent_ids and not DRY_RUN:
     rpc('torrent-start', {'ids': ids})
 
 print(f'\nResults:')
-print(f'  {"Would link" if DRY_RUN else "Linked"}: {linked}')
+print(f'  {"Would link" if DRY_RUN else "Linked"}: {linked}  (of which by-size/renamed: {renamed})')
 print(f'  Ambiguous:  {ambiguous}')
 print(f'  Not found:  {not_found}')
 print(f'  Errors:     {errors}')
