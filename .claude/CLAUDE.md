@@ -178,6 +178,16 @@ Connect with `ssh omg` / `ssh media` from anywhere — the alias auto-picks LAN 
 
 `~/.claude/settings.json` is not tracked (see Dotfiles above). Reconstruct these on a fresh machine:
 
+### Default permission mode
+
+Auto mode is the global default — a classifier auto-runs edits and safe commands, blocks destructive/irreversible ones. Add to `settings.json` under `"permissions"`:
+
+```json
+"defaultMode": "auto"
+```
+
+The auto-mode and dangerous-mode opt-in dialogs are pre-dismissed via `"skipAutoPermissionPrompt": true` and `"skipDangerousModePermissionPrompt": true` (both top-level). Per-project `.claude/settings.json` overrides this for a given repo.
+
 ### tmux window-name hooks
 
 Requires `~/.claude/hook-tmux.sh` (tracked). Add to `settings.json` under `"hooks"`:
